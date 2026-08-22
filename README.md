@@ -105,6 +105,14 @@ pyinstaller -n SeeGlow --noconsole --collect-all seeglow ^
 
 本项目仅供学习交流，请尊重UP主版权，勿用于商业搬运。总结由AI生成，可能存在偏差，请以原视频为准。
 
+## 支持作者
+
+拾光采用「源码免费 + 封装版订阅」模式：
+
+- **源码永久免费**：MIT 协议，可自由使用、修改、分发
+- 如果这个项目帮到了你，欢迎到 [爱发电](https://afdian.com/a/Orisyan) 支持一下
+- **封装版**（免装 Python、双击即用）与持续更新通过爱发电订阅获取：https://afdian.com/a/Orisyan
+
 ## License
 
 MIT
