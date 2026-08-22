@@ -41,7 +41,13 @@ python -m seeglow --web
 python -m seeglow "https://www.bilibili.com/video/BVxxxx"
 python -m seeglow BV1GJ411x7h7
 python -m seeglow "https://b23.tv/xxxx"
+
+# 多P视频
+python -m seeglow "BVxxxx" --p 3            # 只总结第3个分P
+python -m seeglow "BVxxxx" --all-pages      # 总结全部分P，合并为一份笔记
 ```
+
+> 网页版粘贴多P链接会自动弹出分P列表，点选即可。
 
 支持：完整链接（含 `?p=` 分P）、BV号、av号、b23.tv 短链。
 
@@ -100,6 +106,10 @@ pip install pyinstaller
 pyinstaller -n SeeGlow --noconsole --collect-all seeglow ^
   --add-data "seeglow/static;seeglow/static" run_web.py
 ```
+
+## 更新日志
+
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v0.2.0**：B站多P视频完整适配（选P总结 / 全部P合并）。
 
 ## 免责声明
 

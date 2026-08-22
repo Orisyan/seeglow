@@ -44,6 +44,13 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .ask .go:disabled{opacity:.45;cursor:not-allowed}
 .hint{margin-top:14px;font-size:12.5px;color:#a1a1aa}
 
+.picker{display:none;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap;background:var(--hover);border:1px dashed var(--accent);padding:12px 14px;border-radius:12px}
+.picker .pinfo{font-size:13px;color:var(--sub)}
+.picker select{background:#fff;border:1.5px solid var(--line);border-radius:9px;padding:7px 10px;font-size:13px;color:var(--ink);max-width:300px;font-family:inherit;outline:none}
+.picker select:focus{border-color:var(--accent)}
+.picker button{border:none;border-radius:9px;padding:8px 18px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:inherit}
+.picker button:hover{filter:brightness(1.06)}
+.picker button.alt{background:var(--card);color:var(--sub);border:1.5px solid var(--line);font-weight:500}
 .err{margin-top:16px;background:#fef2f2;border:1px solid #fecaca;color:var(--err);padding:12px 16px;border-radius:12px;font-size:13.5px;line-height:1.7;display:none;white-space:pre-wrap}
 
 /* progress */
@@ -142,6 +149,13 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
           <button class="go" id="startBtn" onclick="start()">开始总结</button>
         </div>
         <div class="hint">支持链接 / BV 号 / av 号 / b23.tv 短链 · 总结仅保存在本机</div>
+
+        <div class="picker" id="pagePicker">
+          <span class="pinfo" id="pageInfo"></span>
+          <select id="pageSel"></select>
+          <button onclick="startRun(false)">总结选中的P</button>
+          <button class="alt" onclick="startRun(true)">总结全部P</button>
+        </div>
 
         <div class="prog" id="progressCard">
           <div class="row"><span class="stage" id="stageLabel">准备中…</span><span class="pct" id="pPct">0%</span></div>
@@ -259,12 +273,32 @@ async function api(path,opts){
   return r.json();
 }
 
+let pickedUrl="";
 async function start(){
   const url=$("url").value.trim();
   if(!url)return showErr("请先粘贴B站视频链接");
   showErr("");
   try{
-    const d=await api("/api/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
+    const info=await api("/api/parse",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
+    pickedUrl=url;
+    const ps=info.pages||[];
+    if(ps.length>1){
+      $("pageInfo").textContent=`「${info.title.slice(0,26)}」共 ${ps.length} 个分P`;
+      $("pageSel").innerHTML=ps.map(p=>`<option value="${p.page}">P${p.page} ${esc((p.part||"").slice(0,28))}</option>`).join("");
+      $("pagePicker").style.display="flex";
+      return;
+    }
+    await startRun(false);
+  }catch(e){showErr(e.message)}
+}
+async function startRun(allPages){
+  if(!pickedUrl)return;
+  $("pagePicker").style.display="none";
+  try{
+    const body={url:pickedUrl};
+    if(!allPages)body.page=parseInt($("pageSel").value)||1;
+    body.all_pages=!!allPages;
+    const d=await api("/api/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     currentTask=d.task_id;
     $("resultCard").style.display="none";
     $("startBtn").disabled=true;

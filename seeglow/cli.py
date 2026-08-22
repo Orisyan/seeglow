@@ -29,7 +29,10 @@ def run_cli(url: str, args) -> int:
     from . import pipeline
     from .config import load_config
 
-    options = {}
+    options = {
+        "page": args.p,
+        "all_pages": bool(args.all_pages),
+    }
     if args.output:
         from .config import save_config
 
@@ -72,6 +75,8 @@ def main():
     parser.add_argument("--host", default="127.0.0.1", help="Web 监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=8765, help="Web 端口（默认 8765）")
     parser.add_argument("--no-browser", action="store_true", help="启动时不自动打开浏览器")
+    parser.add_argument("--p", type=int, default=None, help="多P视频：指定总结第几个分P")
+    parser.add_argument("--all-pages", action="store_true", help="多P视频：总结全部分P并合并为一份笔记")
     parser.add_argument("--output", default=None, help="总结 Markdown 输出目录")
     args = parser.parse_args()
 

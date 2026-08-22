@@ -14,8 +14,14 @@ app = FastAPI(title="SeeGlow API")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
+class ParseReq(BaseModel):
+    url: str
+
+
 class StartReq(BaseModel):
     url: str
+    page: Optional[int] = None
+    all_pages: bool = False
 
 
 class ConfigReq(BaseModel):
@@ -33,6 +39,26 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.post("/api/parse")
+def parse_video(req: ParseReq):
+    """解析链接，返回视频信息与分P列表（供前端选择）。"""
+    from . import bilibili
+    from .config import load_config
+
+    try:
+        bvid, _page = bilibili.parse_bvid(req.url)
+        info = bilibili.get_video_info(bvid, load_config().get("sessdata", ""))
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    return {
+        "bvid": info["bvid"],
+        "title": info["title"],
+        "owner": info["owner"],
+        "duration": info["duration"],
+        "pages": info["pages"] or [{"page": 1, "cid": info["cid_first"], "part": ""}],
+    }
+
+
 @app.post("/api/start")
 def start(req: StartReq):
     if not req.url.strip():
@@ -42,7 +68,7 @@ def start(req: StartReq):
     def job(progress_cb):
         return pipeline.run_pipeline(
             req.url,
-            {},
+            {"page": req.page, "all_pages": req.all_pages},
             progress_cb,
             stop_check=lambda: tasks.is_stopped(tid),
         )
