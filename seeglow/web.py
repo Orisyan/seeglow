@@ -91,6 +91,83 @@ def stop_task(tid: str):
     return {"ok": True}
 
 
+class AskReq(BaseModel):
+    file: str
+    question: str
+    history: Optional[list] = None
+
+
+@app.post("/api/ask")
+def ask(req: AskReq):
+    """基于已保存的视频上下文回答问题（引用时间点）。"""
+    import json as _json
+
+    from .summarize import LLMClient
+
+    q = (req.question or "").strip()
+    if not q:
+        raise HTTPException(400, "请输入问题")
+
+    base = _output_dir().resolve()
+    ctx_path = (base / (req.file + ".ctx.json")).resolve()
+    if ctx_path.parent != base or not ctx_path.exists():
+        raise HTTPException(404, "未找到该视频的问答上下文")
+
+    data = _json.loads(ctx_path.read_text(encoding="utf-8"))
+    items = data.get("items") or []
+    if not items:
+        raise HTTPException(404, "该笔记没有可用的问答上下文")
+
+    # 简单相关性挑选：按问题字符与条目文本的重叠度排序，控制总长度
+    from .bilibili import fmt_ts
+
+    def _fmt(s):
+        return fmt_ts(float(s))
+
+    def score(text: str) -> int:
+        return sum(text.count(q[i : i + 2]) for i in range(len(q) - 1))
+
+    scored = sorted(items, key=lambda it: -score(it["text"]))
+    budget, chosen = 12000, []
+    for it in scored:
+        if budget <= 0:
+            break
+        piece = f"[{_fmt(it['start'])}-{_fmt(it['end'])}] {it['text']}"
+        if len(piece) > budget:
+            piece = piece[:budget]
+        chosen.append(piece)
+        budget -= len(piece) + 1
+
+    chosen.sort()  # 按时间字符串顺序（mm:ss 字典序即可）
+    context = "\n".join(chosen)
+
+    cfg = load_config()
+    client = LLMClient(
+        cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"), cfg.get("temperature", 0.3)
+    )
+
+    history_msgs = []
+    for h in (req.history or [])[-6:]:
+        if isinstance(h, dict) and h.get("q") and h.get("a"):
+            history_msgs.append({"role": "user", "content": h["q"]})
+            history_msgs.append({"role": "assistant", "content": str(h["a"])[:1500]})
+
+    system = (
+        "你是「拾光 SeeGlow」的视频内容助手。只依据提供的视频内容片段回答用户问题，"
+        "引用内容时标注 [mm:ss] 时间点；如果上下文中没有相关信息，请明确说明"
+        "“视频中未涉及”，不要编造。回答使用中文 Markdown。"
+    )
+    user = f"以下是视频《{data.get('title','')}》的内容片段：\n\n{context}\n\n用户的问题：{q}"
+
+    try:
+        answer = client.chat(
+            [{"role": "system", "content": system}] + history_msgs + [{"role": "user", "content": user}]
+        )
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    return {"answer": answer}
+
+
 def _output_dir() -> Path:
     d = Path(load_config()["output_dir"])
     d.mkdir(parents=True, exist_ok=True)

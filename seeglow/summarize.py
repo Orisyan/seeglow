@@ -331,7 +331,12 @@ def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=Non
             )
             if progress_cb:
                 progress_cb(1.0, "总结完成")
-            return md
+            ctx = [{
+                "start": starts[0],
+                "end": total_sec,
+                "text": f"全片音频小结（{fmt_ts(starts[0])}-{fmt_ts(total_sec)}）\n{md}",
+            }]
+            return {"md": md, "ctx": ctx}
 
         # 多段：并行直听 → 汇总
         partials = [None] * n
@@ -371,6 +376,10 @@ def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=Non
         )
         if progress_cb:
             progress_cb(1.0, "总结完成")
-        return md
+        ctx = [
+            {"start": starts[i], "end": starts[i] + len(chunks[i]) / SR, "text": partials[i]}
+            for i in range(n)
+        ]
+        return {"md": md, "ctx": ctx}
     finally:
         cleanup(*paths)

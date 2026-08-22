@@ -8,6 +8,7 @@ v0.2.0 起支持B站多P视频：
 from __future__ import annotations
 
 import datetime
+import json
 import tempfile
 import time
 from pathlib import Path
@@ -40,7 +41,14 @@ def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, sto
             client,
             progress_cb=lambda p, msg="": prog("summarize", 0.55 + p * 0.42, msg),
         )
-        return {"src": "B站字幕", "md": md, "segs": len(segments)}
+        return {
+            "src": "B站字幕",
+            "md": md,
+            "segs": len(segments),
+            "ctx": [
+                {"start": s["start"], "end": s["end"], "text": s["text"]} for s in segments
+            ],
+        }
 
     reason = "无可用字幕" + (f"（{sub_error}）" if sub_error else "")
     prog("download", 0.16, f"{reason}，下载音频中…")
@@ -56,7 +64,7 @@ def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, sto
         )
         prog("omni", 0.26, f"让 {client.model} 直接听音频…")
         listen_title = title + (f"（P{page_no}）" if part else "")
-        md = sz_mod.summarize_audio_direct(
+        res = sz_mod.summarize_audio_direct(
             tmp_audio,
             listen_title,
             client,
@@ -64,7 +72,12 @@ def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, sto
             stop_check=stop_check,
             notice_cb=lambda m: prog("omni", 0.3, m),
         )
-        return {"src": f"AI直听·{client.model}", "md": md, "segs": 0}
+        return {
+            "src": f"AI直听·{client.model}",
+            "md": res["md"],
+            "segs": 0,
+            "ctx": res["ctx"],
+        }
     except Exception as e:
         if "取消" in str(e):
             raise
@@ -181,6 +194,21 @@ def run_pipeline(url: str, options: dict | None, progress_cb, stop_check=None) -
 
     out_path = out_dir / fname
     out_path.write_text(content, encoding="utf-8")
+
+    # 保存问答上下文（供 AI 问答使用）
+    ctx_items = []
+    for pg, r in results:
+        pfx = f"P{pg['page']} {pg.get('part','')} · " if len(results) > 1 else ""
+        for it in r.get("ctx", []):
+            ctx_items.append({"start": it["start"], "end": it["end"], "text": f"{pfx}{it['text']}"})
+    ctx_items.sort(key=lambda x: x["start"])
+    (out_dir / f"{fname}.ctx.json").write_text(
+        json.dumps(
+            {"title": title, "url": f"https://www.bilibili.com/video/{bvid}", "items": ctx_items},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
     report("done", 100, "完成")
     return {

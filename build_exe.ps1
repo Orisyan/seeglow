@@ -1,4 +1,4 @@
-# 拾光 SeeGlow · 命令行 EXE 一键打包脚本
+﻿# 拾光 SeeGlow · 命令行 EXE 一键打包脚本
 # 用法：pip install pyinstaller 后，在项目根目录执行 .\build_exe.ps1
 # 产物：dist\SeeGlow.exe（免 Python 环境，双击即用）
 

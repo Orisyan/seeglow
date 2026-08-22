@@ -116,6 +116,15 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 .dlg-foot button.pri{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;font-weight:600}
 .dlg-foot button:hover{filter:brightness(.97)}
 
+.qa{display:none;margin-top:22px;padding:22px 26px}
+.qa .msgs{max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:12px;margin:14px 0}
+.bub{max-width:88%;padding:9px 13px;border-radius:12px;font-size:13.5px;line-height:1.65;white-space:pre-wrap}
+.bub.u{align-self:flex-end;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-bottom-right-radius:4px}
+.bub.a{align-self:flex-start;background:var(--hover);border:1px solid var(--line);border-bottom-left-radius:4px}
+.qrow{display:flex;gap:10px;margin-top:4px}
+.qrow input{flex:1;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13.5px;color:var(--ink);outline:none;font-family:inherit}
+.qrow input:focus{border-color:var(--accent)}
+.qrow button{border:none;border-radius:10px;padding:0 20px;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:inherit}
 .note{margin-top:26px;font-size:12.5px;color:#a1a1aa;line-height:2}
 </style>
 </head>
@@ -176,6 +185,15 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
           </div>
         </div>
         <div class="md" id="mdBody"></div>
+      </div>
+
+      <div class="card qa" id="qaCard">
+        <h2 style="font-size:15px">AI 问答 <span style="font-weight:400;color:var(--sub);font-size:12px">基于本视频内容 · 回答引用时间点</span></h2>
+        <div class="msgs" id="qaMsgs"></div>
+        <div class="qrow">
+          <input id="qInput" placeholder="例如：XX概念在视频哪里提到？我这么理解对不对？" onkeydown="if(event.key==='Enter')ask()">
+          <button onclick="ask()">发送</button>
+        </div>
       </div>
 
       <div class="note">
@@ -336,6 +354,7 @@ function setProgress(t){
 
 function showResult(res){
   lastResult=res.summary_md;lastFileName=res.output_file||"seeglow.md";
+  qaHistory=[];qaFile="";$("qaMsgs").innerHTML="";$("qaCard").style.display="block";
   $("resultTitle").textContent=res.title;
   $("mdBody").innerHTML=mdRender(lastResult);
   $("resultCard").style.display="block";
@@ -359,6 +378,26 @@ function downloadResult(){
   URL.revokeObjectURL(a.href);
 }
 
+let qaHistory=[],qaFile="";
+function qaBubble(cls,text){
+  const d=document.createElement("div");d.className="bub "+cls;d.textContent=text;
+  $("qaMsgs").appendChild(d);$("qaMsgs").scrollTop=$("qaMsgs").scrollHeight;return d;
+}
+async function ask(){
+  const q=$("qInput").value.trim();
+  if(!q||!lastFileName)return;
+  if(!qaFile)qaFile=lastFileName;
+  $("qInput").value="";
+  qaBubble("u",q);
+  const b=qaBubble("a","思考中…");
+  try{
+    const d=await api("/api/ask",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({file:qaFile,question:q,history:qaHistory.slice(-6)})});
+    b.innerHTML=mdRender(d.answer);
+    qaHistory.push({q,a:d.answer});
+  }catch(e){b.className="bub a";b.textContent="出错了："+e.message}
+}
+
 async function loadHistory(){
   try{
     const list=await api("/api/history");
@@ -375,6 +414,7 @@ async function viewFile(enc){
   try{
     const d=await api("/api/output?name="+enc);
     lastResult=d.content;lastFileName=d.name;
+    qaHistory=[];qaFile=d.name;$("qaMsgs").innerHTML="";$("qaCard").style.display="block";
     $("resultTitle").textContent=d.name.replace(/\.md$/,"").replace(/^\d{8}-/,"");
     $("mdBody").innerHTML=mdRender(d.content);
     $("resultCard").style.display="block";
