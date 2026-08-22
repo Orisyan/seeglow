@@ -49,6 +49,17 @@ python -m seeglow "BVxxxx" --all-pages      # 总结全部分P，合并为一份
 
 > 网页版粘贴多P链接会自动弹出分P列表，点选即可。
 
+### 免安装 EXE（Windows）
+
+不想装 Python？下载 `SeeGlow.exe`（约 58MB）双击即用：
+
+- 双击进入交互模式：粘贴链接回车即总结，可连续处理多个视频
+- 总结保存在 EXE 同目录的 `拾光\` 文件夹
+- 首次使用：在同目录创建 `config.json`（参考 config.example.json）填入 API 地址与 Key，或设置环境变量 `SEELOW_API_KEY`
+- 也可命令行传参：`.\SeeGlow.exe "BVxxxx" --all-pages`
+
+自行打包：`pip install pyinstaller` 后执行 `.\build_exe.ps1`。
+
 支持：完整链接（含 `?p=` 分P）、BV号、av号、b23.tv 短链。
 
 ## 配置

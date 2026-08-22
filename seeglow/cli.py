@@ -65,6 +65,25 @@ def run_cli(url: str, args) -> int:
     return 0
 
 
+def interactive(args):
+    """双击运行模式：循环读取链接，逐个总结。"""
+    print("交互模式：粘贴B站视频链接后回车开始总结；输入 q 或直接回车退出。\n")
+    while True:
+        try:
+            url = input("视频链接> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if not url or url.lower() in ("q", "exit", "quit"):
+            break
+        run_cli(url, args)
+        print("\n再粘贴下一个链接继续，或输入 q 退出。\n")
+
+    try:
+        input("按回车关闭窗口…")
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="seeglow",
@@ -82,7 +101,7 @@ def main():
 
     print(BANNER)
 
-    if args.web or not args.url:
+    if args.web:
         import threading
         import webbrowser
 
@@ -94,6 +113,11 @@ def main():
         from .web import main as web_main
 
         web_main(args.host, args.port)
+        return
+
+    if not args.url:
+        # 交互模式：双击 EXE / 直接运行时进入
+        interactive(args)
         return
 
     sys.exit(run_cli(args.url, args))

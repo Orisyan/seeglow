@@ -2,9 +2,15 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+if getattr(sys, "frozen", False):
+    # PyInstaller 打包后：配置与输出跟随 exe 所在目录，重启不丢失
+    ROOT = Path(sys.executable).resolve().parent
+else:
+    ROOT = Path(__file__).resolve().parent.parent
+
 CONFIG_PATH = ROOT / "config.json"
 DEFAULT_OUTPUT = ROOT / "拾光"
 
