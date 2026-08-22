@@ -7,6 +7,7 @@ Set-Location $PSScriptRoot
 
 python -m PyInstaller --name SeeGlow --onefile --console --clean `
   --paths . `
+  --icon icon.ico `
   --exclude-module fastapi --exclude-module uvicorn --exclude-module pydantic `
   exe_entry.py
 
