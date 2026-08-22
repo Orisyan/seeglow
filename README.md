@@ -1,0 +1,110 @@
+# 拾光 SeeGlow
+
+> 让长视频，一眼见光。粘贴一个B站链接，得到一份结构化的中文总结笔记。
+
+拾光（SeeGlow）是一个**B站长视频总结工具**：自动获取视频字幕，无字幕时让多模态大模型直接听音频，生成包含「一句话总结 / 核心要点 / 内容时间线 / 金句摘录」的 Markdown 笔记。
+
+## 特性
+
+- **一个模型干两份活**：只需一个支持音频输入的多模态模型（如 Qwen2.5-Omni、GPT-4o-audio），既能直接听视频写总结，也能处理字幕文本
+- **纯 AI，零本地转写**：无字幕视频由多模态模型直接听音频理解内容，无需任何本地语音引擎
+- **超长视频不慌**：音频自动切段逐段理解后汇总，几小时的视频也能完整总结
+- **结构化输出**：一句话总结、核心要点、带时间点的内容时间线、金句摘录、适合谁看
+- **双入口**：本地网页界面 + 命令行
+- **纯本机运行**：总结结果保存在本地 `拾光/` 目录，不上传任何数据
+- **OpenAI 兼容**：支持硅基流动、OpenAI 等任何兼容 API，服务商预设一键填好
+
+## 安装
+
+```bash
+# 需要 Python 3.9+
+pip install -r requirements.txt
+```
+
+
+## 快速开始
+
+### 网页版（推荐）
+
+```bash
+python -m seeglow --web
+# 浏览器打开 http://127.0.0.1:8765
+```
+
+1. 首次使用点击右上角「设置」，填入 API 地址、API Key、模型名
+2. 粘贴B站视频链接 → 点击「开始总结」
+3. 实时查看进度，完成后在线阅读、复制或下载 Markdown
+
+### 命令行
+
+```bash
+python -m seeglow "https://www.bilibili.com/video/BVxxxx"
+python -m seeglow BV1GJ411x7h7
+python -m seeglow "https://b23.tv/xxxx"
+```
+
+支持：完整链接（含 `?p=` 分P）、BV号、av号、b23.tv 短链。
+
+## 配置
+
+配置保存在项目根目录 `config.json`（网页版设置页可改），也可用环境变量 `SEELOW_XXX` 覆盖：
+
+| 字段 | 说明 | 默认 |
+|---|---|---|
+| `provider` | 服务商预设：siliconflow / openai / groq / custom | 空 |
+| `api_base` | OpenAI 兼容 API 地址（总结与转写共用） | `https://api.siliconflow.cn/v1` |
+| `api_key` | API Key（一个 Key 干两份活） | 空 |
+| `model` | 模型名称（需支持音频输入，如 `Qwen/Qwen2.5-Omni-7B`） | `Qwen/Qwen2.5-Omni-7B` |
+| `temperature` | 采样温度 0~1 | `0.3` |
+| `sessdata` | B站 Cookie SESSDATA（可选） | 空 |
+| `output_dir` | 总结输出目录 | `./拾光` |
+
+**关于 SESSDATA**：部分视频的AI字幕和高清音频流需要登录态才能获取。在浏览器登录B站后复制 SESSDATA Cookie 填入即可；不填也能正常工作（无字幕视频由 AI 直接听音频）。
+
+## 工作流程
+
+```
+解析链接 → 获取视频信息 → 尝试B站字幕 ──有──→ 文本总结
+                              │
+                              无
+                              ↓
+                       下载音频(DASH)
+                              ↓
+              多模态模型直听音频（切段逐段理解 → 汇总）
+                              ↓
+                保存 Markdown 到 拾光/ 目录
+```
+
+**推荐模型预设**（设置页选服务商即自动填好，一个 Key 一个模型全搞定）：
+
+| 服务商 | API 地址 | 模型 |
+|---|---|---|
+| 硅基流动 | `https://api.siliconflow.cn/v1` | `Qwen/Qwen2.5-Omni-7B` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-audio-preview` |
+
+> 注意：纯文本模型（如 DeepSeek 官方 API）不能听音频；无字幕视频会直接报错。想全自动出稿，请选支持音频输入的模型。
+
+## 常见问题
+
+**Q: 提示"AI 直听音频失败"？**
+说明当前配置的模型不支持音频输入（如 DeepSeek 官方 API 的纯文本模型）。请在设置里换成支持音频的模型（推荐硅基流动的 `Qwen/Qwen3-Omni-30B-A3B-Instruct`）；或配置 SESSDATA 让工具优先使用B站字幕。
+
+**Q: 音频下载失败 / 拿不到字幕？**
+给配置加上 SESSDATA；或检查视频是否为付费/专属内容（暂不支持）。
+
+**Q: 打包成 exe 发布？**
+源码基于 MIT 协议免费开源。如需封装版，可用 PyInstaller：
+
+```bash
+pip install pyinstaller
+pyinstaller -n SeeGlow --noconsole --collect-all seeglow ^
+  --add-data "seeglow/static;seeglow/static" run_web.py
+```
+
+## 免责声明
+
+本项目仅供学习交流，请尊重UP主版权，勿用于商业搬运。总结由AI生成，可能存在偏差，请以原视频为准。
+
+## License
+
+MIT

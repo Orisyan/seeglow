@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seeglow"
+version = "0.1.0"
+description = "拾光 SeeGlow · B站长视频一键总结工具"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.28",
+    "fastapi>=0.100",
+    "uvicorn>=0.20",
+    "pydantic>=2.0",
+    "av>=12.0",
+    "numpy>=1.24",
+]
+
+[project.scripts]
+seeglow = "seeglow.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["seeglow*"]
+
+[tool.setuptools.package-data]
+seeglow = ["static/*"]

@@ -1,0 +1,10 @@
+{
+  "api_base": "https://api.deepseek.com/v1",
+  "api_key": "在这里填入你的 API Key",
+  "model": "deepseek-chat",
+  "temperature": 0.3,
+  "sessdata": "",
+  "whisper_model": "small",
+  "whisper_language": "zh",
+  "output_dir": "./拾光"
+}

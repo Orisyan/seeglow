@@ -1,0 +1,376 @@
+"""大模型总结：OpenAI 兼容 API；支持文本转写稿总结与多模态模型直听音频。"""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+import requests
+
+
+class LLMError(RuntimeError):
+    pass
+
+
+class LLMClient:
+    def __init__(self, api_base, api_key, model, temperature=0.3, timeout=300):
+        self.api_base = (api_base or "").rstrip("/")
+        self.api_key = (api_key or "").strip()
+        self.model = model or ""
+        self.temperature = temperature
+        self.timeout = timeout
+        if not self.api_base:
+            raise LLMError("请先在设置中配置 API 地址（如 https://api.siliconflow.cn/v1）")
+        if not self.api_key:
+            raise LLMError("请先在设置中配置 API Key")
+        if not self.model:
+            raise LLMError("请先在设置中配置模型名称")
+
+        # 复用 HTTPS 连接，省去每次调用的 TLS 握手
+        from requests.adapters import HTTPAdapter
+
+        self.session = requests.Session()
+        adapter = HTTPAdapter(pool_connections=8, pool_maxsize=8)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+
+    def chat(self, messages, max_retries=2) -> str:
+        url = self.api_base + "/chat/completions"
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        last_err = None
+        for attempt in range(max_retries + 1):
+            try:
+                r = self.session.post(url, json=payload, headers=headers, timeout=self.timeout)
+                if r.status_code == 200:
+                    content = r.json()["choices"][0]["message"]["content"]
+                    if content and content.strip():
+                        return content.strip()
+                    last_err = LLMError("模型返回了空内容")
+                else:
+                    last_err = LLMError(f"API 返回 {r.status_code}: {r.text[:300]}")
+                    if r.status_code in (400, 401, 403, 404):
+                        # 客户端错误（如模型不支持音频输入）重试无意义，直接抛出
+                        raise last_err
+            except requests.RequestException as e:
+                last_err = e
+            if attempt < max_retries:
+                time.sleep(2 * (attempt + 1))
+        raise LLMError(f"调用大模型失败：{last_err}")
+
+
+SYSTEM_PROMPT = (
+    "你是「拾光 SeeGlow」的资深视频内容分析师，擅长把冗长的视频转写稿提炼成"
+    "结构清晰、信息密度高的中文笔记。输出使用 GitHub 风格 Markdown，"
+    "忠实于原片内容，不编造事实。直接输出正文，不要寒暄。"
+)
+
+CHUNK_CHARS = 3600
+
+
+def chunk_text(text: str, max_chars: int = CHUNK_CHARS):
+    lines = text.splitlines()
+    chunks, cur, size = [], [], 0
+    for ln in lines:
+        if size + len(ln) > max_chars and cur:
+            chunks.append("\n".join(cur))
+            cur, size = [], 0
+        cur.append(ln)
+        size += len(ln) + 1
+    if cur:
+        chunks.append("\n".join(cur))
+    return chunks
+
+
+SINGLE_PROMPT = """请根据下面的B站视频转写稿，生成一份高质量中文总结笔记。
+
+【视频信息】
+{meta}
+
+【转写稿】（方括号内为时间点）
+{transcript}
+
+【输出要求】
+严格使用以下 Markdown 结构，直接以 `## 一句话总结` 开头，不要输出一级标题：
+
+## 一句话总结
+用一句话概括这支视频讲了什么。
+
+## 核心要点
+- 用 5~10 条要点覆盖视频的主要论点/知识点，每条一行，重要概念加粗。
+
+## 内容时间线
+- 依据转写稿中的时间点列出 4~10 个章节，格式：`[mm:ss] 章节名 —— 一句话说明`。
+
+## 金句摘录
+- 摘录 2~4 句原文中有价值或有趣的表达。
+
+## 适合谁看 & 结语
+简短说明目标观众，并给出一句观看建议。"""
+
+MAP_PROMPT = """以下是长视频的第 {i}/{n} 段转写稿（上下文可能被截断）。
+
+【视频信息】
+{meta}
+
+【本段转写稿】
+{chunk}
+
+请提炼本段内容，直接输出 Markdown：
+## 本段小结
+- 3~6 条要点，保留关键数据、结论与时间点；如出现明显时间点，请在条目前标注 `[mm:ss]`。
+不要寒暄，直接输出。"""
+
+REDUCE_PROMPT = """下面是一支长视频各片段的小结，请整合成一份最终总结笔记。
+
+【视频信息】
+{meta}
+
+【各段小结】
+{joined}
+
+【输出要求】
+严格使用以下结构，直接以 `## 一句话总结` 开头：
+## 一句话总结 / ## 核心要点 / ## 内容时间线 / ## 金句摘录 / ## 适合谁看 & 结语
+要求：合并重复内容；时间线按时间顺序排列并保留 `[mm:ss]` 时间点；总长度控制在 600~1200 字。"""
+
+
+def summarize_transcript(transcript_text: str, meta: str, client: LLMClient, progress_cb=None):
+    def report(p, msg=""):
+        if progress_cb:
+            progress_cb(min(max(p, 0.0), 1.0), msg)
+
+    chunks = chunk_text(transcript_text)
+    n = len(chunks)
+
+    if n == 1:
+        report(0.15, "正在生成总结…")
+        md = client.chat(
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": SINGLE_PROMPT.format(meta=meta, transcript=chunks[0])},
+            ]
+        )
+        report(1.0, "总结完成")
+        return md
+
+    partials = []
+    for i, ch in enumerate(chunks):
+        report(i / n * 0.85, f"分段精读 {i + 1}/{n}…")
+        part = client.chat(
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": MAP_PROMPT.format(i=i + 1, n=n, meta=meta, chunk=ch),
+                },
+            ]
+        )
+        partials.append(part)
+
+    report(0.9, "汇总全文总结…")
+    joined = "\n\n".join(f"【片段 {i + 1} 小结】\n{p}" for i, p in enumerate(partials))
+    md = client.chat(
+        [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": REDUCE_PROMPT.format(meta=meta, joined=joined)},
+        ]
+    )
+    report(1.0, "总结完成")
+    return md
+
+
+# ---------------- 单模型直听音频（多模态） ----------------
+
+AUDIO_CHUNK_SEC = 240
+AUDIO_CONCURRENCY = 6
+
+AUDIO_MAP_PROMPT = """你是视频内容分析师。以下是视频《{title}》从第 {start} 到第 {end} 的音频片段，请直接聆听。
+
+听完输出该片段的 Markdown 小结，格式如下：
+
+## [mm:ss] 段落主题
+- 3~6 条要点：保留关键数据、人名、结论与原话金句；重要时间点用 `[mm:ss]` 标注（相对整支视频，本段起点为 {start}）。
+
+直接输出，不要寒暄。"""
+
+AUDIO_SINGLE_PROMPT = """你是视频内容分析师。以下是视频《{title}》的完整音频（从 {start} 到 {end}），请直接聆听。
+
+听完后生成一份高质量中文总结笔记，严格使用以下 Markdown 结构，直接以 `## 一句话总结` 开头：
+
+## 一句话总结
+用一句话概括这支视频讲了什么。
+
+## 核心要点
+- 用 5~10 条要点覆盖主要论点/知识点，重要概念加粗。
+
+## 内容时间线
+- 依据音频中的内容顺序列出 4~10 个章节，格式：`[mm:ss] 章节名 —— 一句话说明`。
+
+## 金句摘录
+- 摘录 2~4 句原话中有价值或有趣的表达。
+
+## 适合谁看 & 结语
+简短说明目标观众，并给出一句观看建议。"""
+
+REDUCE_AUDIO_PROMPT = """下面是 AI 逐段聆听视频《{title}》音频后得到的分段小结，请整合成一份最终总结笔记。
+
+【各段小结】
+{joined}
+
+【输出要求】
+严格使用以下结构，直接以 `## 一句话总结` 开头：
+## 一句话总结 / ## 核心要点 / ## 内容时间线 / ## 金句摘录 / ## 适合谁看 & 结语
+要求：合并重复内容；时间线按时间顺序并保留时间点；总长控制在 600~1200 字。"""
+
+
+def _wav_b64(path) -> str:
+    import base64
+
+    return base64.b64encode(Path(path).read_bytes()).decode()
+
+
+def build_audio_message(prompt: str, audio_path, style: str = "input_audio") -> dict:
+    suffix = str(audio_path).lower().rsplit(".", 1)[-1]
+    mime = "audio/mpeg" if suffix == "mp3" else "audio/wav"
+    fmt = suffix if suffix in ("mp3", "wav") else "wav"
+    b64 = _wav_b64(audio_path)
+    if style == "audio_url":
+        # 硅基流动等平台使用的 data-uri 格式
+        content = [
+            {"type": "text", "text": prompt},
+            {"type": "audio_url", "audio_url": {"url": f"data:{mime};base64,{b64}"}},
+        ]
+    else:
+        # OpenAI 标准格式
+        content = [
+            {"type": "text", "text": prompt},
+            {"type": "input_audio", "input_audio": {"data": b64, "format": fmt}},
+        ]
+    return {"role": "user", "content": content}
+
+
+def _listen_chunk(client, system_prompt, prompt, audio_path, preferred_style):
+    """让模型听一段音频并返回小结；平台不接受 input_audio 时自动换 data-uri 格式。"""
+    try:
+        return (
+            client.chat(
+                [
+                    {"role": "system", "content": system_prompt},
+                    build_audio_message(prompt, audio_path, preferred_style),
+                ]
+            ),
+            preferred_style,
+        )
+    except LLMError as e:
+        if preferred_style == "input_audio" and "400" in str(e):
+            return (
+                client.chat(
+                    [
+                        {"role": "system", "content": system_prompt},
+                        build_audio_message(prompt, audio_path, "audio_url"),
+                    ]
+                ),
+                "audio_url",
+            )
+        raise
+
+
+def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=None, stop_check=None, notice_cb=None):
+    def notice(msg):
+        if notice_cb:
+            notice_cb(msg)
+
+    def stopped():
+        return stop_check is not None and stop_check()
+
+    import os
+    import tempfile
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from .audioutil import SR, cleanup, chunk_starts, decode_audio, export_chunk, split_chunks
+    from .bilibili import fmt_ts
+
+    notice("正在解码音频…")
+    audio = decode_audio(str(audio_path))
+    chunks = split_chunks(audio, AUDIO_CHUNK_SEC)
+    n = len(chunks)
+    starts = chunk_starts(chunks)
+    total_sec = starts[-1] + len(chunks[-1]) / SR if chunks else 0
+
+    tmp_dir = Path(tempfile.gettempdir())
+    name_base = f"seeglow_omni_{os.getpid()}"
+    paths = []
+    try:
+        for i, ch in enumerate(chunks):
+            paths.append(export_chunk(ch, tmp_dir, f"{name_base}_{i}"))
+        sizes = sum(p.stat().st_size for p in paths)
+        notice(
+            f"音频 {total_sec:.0f}s → {len(paths)} 段（共 {sizes // 1024} KB），"
+            + (f"{AUDIO_CONCURRENCY} 路并行直听…" if n > 1 else "AI 正在听…")
+        )
+
+        # 单段：一次调用直接产出最终总结（省去汇总步骤）
+        if n == 1:
+            if progress_cb:
+                progress_cb(0.25, f"AI 正在听音频（{sizes // 1024} KB）…")
+            md, _ = _listen_chunk(
+                client,
+                SYSTEM_PROMPT,
+                AUDIO_SINGLE_PROMPT.format(title=title, start=fmt_ts(starts[0]), end=fmt_ts(total_sec)),
+                paths[0],
+                "input_audio",
+            )
+            if progress_cb:
+                progress_cb(1.0, "总结完成")
+            return md
+
+        # 多段：并行直听 → 汇总
+        partials = [None] * n
+        done = 0
+
+        def job(idx):
+            end_t = starts[idx] + len(chunks[idx]) / SR
+            prompt = AUDIO_MAP_PROMPT.format(
+                title=title, start=fmt_ts(starts[idx]), end=fmt_ts(end_t)
+            )
+            return _listen_chunk(client, SYSTEM_PROMPT, prompt, paths[idx], "input_audio")
+
+        workers = min(AUDIO_CONCURRENCY, n)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(job, i): i for i in range(n)}
+            for fu in as_completed(futures):
+                idx = futures[fu]
+                partials[idx], _style = fu.result()
+                done += 1
+                if stopped():
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    raise RuntimeError("已取消")
+                if progress_cb:
+                    progress_cb(done / n * 0.85, f"AI 并行直听中… {done}/{n}")
+
+        if progress_cb:
+            progress_cb(0.9, "汇总全文总结…")
+        joined = "\n\n".join(partials)
+        md = client.chat(
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": REDUCE_AUDIO_PROMPT.format(title=title, joined=joined),
+                },
+            ]
+        )
+        if progress_cb:
+            progress_cb(1.0, "总结完成")
+        return md
+    finally:
+        cleanup(*paths)

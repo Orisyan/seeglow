@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#f4f4f5">
+<title>拾光 SeeGlow · B站长视频总结</title>
+<style>
+:root{
+  --bg:#f4f4f5; --card:#ffffff; --ink:#18181b; --sub:#71717a; --line:#e4e4e7;
+  --accent:#f59e0b; --accent2:#f97316; --err:#dc2626; --hover:#fafafa;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font-family:"PingFang SC","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;
+  font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px 80px}
+
+/* header */
+header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;margin-bottom:34px}
+.logo{display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
+.logo .name{font-size:20px;font-weight:700;letter-spacing:.04em;line-height:1.15}
+.logo .en{font-size:10.5px;letter-spacing:.3em;color:var(--sub)}
+.btn-chip{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:8px 20px;font-size:13.5px;color:var(--sub);cursor:pointer;font-family:inherit;transition:.15s}
+.btn-chip:hover{color:var(--ink);border-color:#c4c4c8}
+
+/* cards */
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.05),0 8px 28px -14px rgba(0,0,0,.08)}
+
+/* layout */
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:22px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}.grid aside{display:none}}
+
+/* ask card */
+.ask-card{padding:26px}
+.ask{display:flex;gap:12px}
+.ask input{flex:1;background:var(--hover);border:1.5px solid var(--line);border-radius:12px;padding:13px 16px;font-size:15.5px;color:var(--ink);outline:none;font-family:inherit;transition:border-color .15s, background .15s}
+.ask input::placeholder{color:#a1a1aa}
+.ask input:focus{border-color:var(--accent);background:#fffdf8}
+.ask .go{flex-shrink:0;border:none;border-radius:12px;padding:0 30px;font-size:15px;font-weight:600;color:#fff;cursor:pointer;font-family:inherit;letter-spacing:.06em;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));transition:filter .15s, transform .05s}
+.ask .go:hover{filter:brightness(1.06)}
+.ask .go:active{transform:scale(.98)}
+.ask .go:disabled{opacity:.45;cursor:not-allowed}
+.hint{margin-top:14px;font-size:12.5px;color:#a1a1aa}
+
+.err{margin-top:16px;background:#fef2f2;border:1px solid #fecaca;color:var(--err);padding:12px 16px;border-radius:12px;font-size:13.5px;line-height:1.7;display:none;white-space:pre-wrap}
+
+/* progress */
+.prog{display:none;padding:6px 2px}
+.prog .row{display:flex;justify-content:space-between;align-items:baseline}
+.prog .stage{font-size:14px;font-weight:600}
+.prog .pct{font-size:13px;color:var(--sub);font-variant-numeric:tabular-nums}
+.bar{height:6px;background:var(--line);border-radius:99px;margin-top:14px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .35s ease}
+.prog .msg{margin-top:10px;font-size:12.5px;color:var(--sub);min-height:18px}
+.stop{margin-top:10px;background:none;border:none;color:var(--sub);font-size:12.5px;cursor:pointer;padding:0;font-family:inherit}
+.stop:hover{color:var(--err)}
+
+/* result */
+.result{display:none;margin-top:22px;padding:26px}
+.rhead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.rhead h2{font-size:16.5px;font-weight:700;line-height:1.5}
+.acts{flex-shrink:0;display:flex;gap:8px}
+.acts button{background:var(--hover);border:1px solid var(--line);border-radius:8px;padding:6px 13px;font-size:12.5px;color:var(--sub);cursor:pointer;font-family:inherit}
+.acts button:hover{color:var(--ink);border-color:#c4c4c8}
+
+/* markdown */
+.md{margin-top:16px;font-size:14.5px}
+.md h1{font-size:20px;font-weight:700;margin:22px 0 6px;line-height:1.45}
+.md h2{font-size:15px;font-weight:700;margin:26px 0 8px;display:flex;align-items:center;gap:9px}
+.md h2::before{content:"";width:4px;height:15px;border-radius:3px;background:linear-gradient(180deg,var(--accent),var(--accent2));flex-shrink:0}
+.md h3{font-size:14px;font-weight:600;margin:16px 0 6px}
+.md p{margin:9px 0;color:#27272a}
+.md ul,.md ol{padding-left:0;margin:10px 0;list-style:none}
+.md li{position:relative;padding-left:18px;margin:7px 0;color:#27272a}
+.md li::before{content:"–";position:absolute;left:0;color:var(--accent2);font-weight:600}
+.md blockquote{background:var(--hover);border-left:3px solid var(--accent);padding:9px 14px;margin:10px 0;border-radius:0 8px 8px 0;color:var(--sub)}
+.md code{background:var(--hover);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:13px;font-family:"Cascadia Code",Consolas,monospace}
+.md pre{background:var(--hover);border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;margin:10px 0}
+.md pre code{background:none;border:none;padding:0}
+.md a{color:#c2620a;text-decoration:none;border-bottom:1px solid #fcd34d}
+.md hr{border:none;border-top:1px solid var(--line);margin:24px 0}
+.md details{margin:20px 0}
+.md summary{cursor:pointer;font-size:13px;color:var(--sub);background:var(--hover);border:1px solid var(--line);border-radius:8px;padding:7px 13px;display:inline-block}
+.md summary:hover{color:var(--ink)}
+
+/* aside */
+aside{position:sticky;top:20px;align-self:start}
+.side-card{padding:20px}
+.cap{font-size:12px;font-weight:600;letter-spacing:.18em;color:var(--sub);margin-bottom:12px}
+.h-item{padding:9px 11px;margin:0 -11px;border-radius:10px;cursor:pointer;transition:background .15s}
+.h-item:hover{background:var(--hover)}
+.h-item .t{font-size:13px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.h-item .d{font-size:11px;color:#a1a1aa;margin-top:2px}
+.empty{font-size:12.5px;color:#a1a1aa}
+
+/* dialog */
+dialog{background:var(--card);color:var(--ink);border:none;border-radius:18px;padding:32px;width:min(480px,92vw);box-shadow:0 24px 70px rgba(0,0,0,.22)}
+dialog::backdrop{background:rgba(24,24,27,.35)}
+dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
+.frow{margin-bottom:18px}
+.frow label{display:block;font-size:12.5px;color:var(--sub);margin-bottom:6px}
+.frow input,.frow select{width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:14px;color:var(--ink);outline:none;font-family:inherit;transition:border-color .15s}
+.frow select{cursor:pointer}
+.frow input:focus,.frow select:focus{border-color:var(--accent);background:#fffdf8}
+.dlg-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
+.dlg-foot button{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:9px 20px;font-size:13.5px;color:var(--sub);cursor:pointer;font-family:inherit}
+.dlg-foot button.pri{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;font-weight:600}
+.dlg-foot button:hover{filter:brightness(.97)}
+
+.note{margin-top:26px;font-size:12.5px;color:#a1a1aa;line-height:2}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="/">
+      <svg width="40" height="40" viewBox="0 0 36 36" fill="none">
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="36" y2="36"><stop stop-color="#f59e0b"/><stop offset="1" stop-color="#f97316"/></linearGradient></defs>
+        <rect width="36" height="36" rx="10" fill="url(#lg)"/>
+        <path d="M11 21 a 7 7 0 0 1 14 0" stroke="#fff" stroke-width="2.4" stroke-linecap="round" fill="none"/>
+        <line x1="18" y1="8.5" x2="18" y2="11.5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+        <line x1="9.5" y1="12.5" x2="11.6" y2="14.6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+        <line x1="26.5" y1="12.5" x2="24.4" y2="14.6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+        <line x1="10.5" y1="25" x2="25.5" y2="25" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+      <span>
+        <span class="name">拾光</span><br>
+        <span class="en">S E E G L O W</span>
+      </span>
+    </a>
+    <button class="btn-chip" onclick="openSettings()">设置</button>
+  </header>
+
+  <div class="grid">
+    <main>
+      <div class="card ask-card">
+        <div class="ask" id="askRow">
+          <input id="url" placeholder="粘贴 B 站视频链接或 BV 号，一键生成总结笔记" autocomplete="off"
+                 onkeydown="if(event.key==='Enter')start()">
+          <button class="go" id="startBtn" onclick="start()">开始总结</button>
+        </div>
+        <div class="hint">支持链接 / BV 号 / av 号 / b23.tv 短链 · 总结仅保存在本机</div>
+
+        <div class="prog" id="progressCard">
+          <div class="row"><span class="stage" id="stageLabel">准备中…</span><span class="pct" id="pPct">0%</span></div>
+          <div class="bar"><i id="barFill"></i></div>
+          <div class="msg" id="pMsg"></div>
+          <button class="stop" onclick="stopTask()">取消任务</button>
+        </div>
+
+        <div class="err" id="errBox"></div>
+      </div>
+
+      <div class="card result" id="resultCard">
+        <div class="rhead">
+          <h2 id="resultTitle">总结</h2>
+          <div class="acts">
+            <button onclick="copyResult()">复制 Markdown</button>
+            <button onclick="downloadResult()">下载 .md</button>
+          </div>
+        </div>
+        <div class="md" id="mdBody"></div>
+      </div>
+
+      <div class="note">
+        工作流程 —— 获取B站字幕；无字幕时由多模态大模型直接聆听音频，生成结构化笔记。
+        首次使用请在右上角「设置」中填入 API Key。
+      </div>
+    </main>
+
+    <aside>
+      <div class="card side-card">
+        <div class="cap">历 史 记 录</div>
+        <div id="historyList"><div class="empty">暂无记录</div></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<dialog id="settingsDlg">
+  <h3>设置</h3>
+  <div class="frow"><label>服务商预设（自动填好地址与推荐模型）</label>
+    <select id="cfg_provider" onchange="applyPreset()">
+      <option value="siliconflow">硅基流动（国内快，推荐）</option>
+      <option value="openai">OpenAI</option>
+      <option value="custom">自定义</option>
+    </select></div>
+  <div class="frow"><label>API 地址</label>
+    <input id="cfg_api_base" placeholder="https://api.siliconflow.cn/v1"></div>
+  <div class="frow"><label>API Key（留空不修改；当前 <span id="keyNow">未配置</span>）</label>
+    <input id="cfg_api_key" type="password" placeholder="sk-..."></div>
+  <div class="frow"><label>模型名称（需支持音频输入）</label>
+    <input id="cfg_model" placeholder="Qwen/Qwen3-Omni-30B-A3B-Instruct"></div>
+  <div class="frow"><label>温度（0 ~ 1）</label>
+    <input id="cfg_temperature" type="number" step="0.1" min="0" max="1" value="0.3"></div>
+  <div class="frow"><label>B站 Cookie SESSDATA（可选；当前 <span id="sdNow">未配置</span>）</label>
+    <input id="cfg_sessdata" type="password" placeholder="留空不修改"></div>
+  <div class="dlg-foot">
+    <button onclick="settingsDlg.close()">取消</button>
+    <button class="pri" onclick="saveSettings()">保存设置</button>
+  </div>
+</dialog>
+
+<script>
+const $=id=>document.getElementById(id);
+let currentTask=null,pollTimer=null,lastResult="",lastFileName="";
+
+const PRESETS={
+ siliconflow:{api_base:"https://api.siliconflow.cn/v1",model:"Qwen/Qwen3-Omni-30B-A3B-Instruct"},
+ openai:{api_base:"https://api.openai.com/v1",model:"gpt-4o-audio-preview"},
+ custom:{api_base:"",model:""}
+};
+function detectProvider(base){
+  for(const k in PRESETS){if(k!=="custom"&&PRESETS[k].api_base===base)return k}
+  return "custom";
+}
+function applyPreset(){
+  const v=$("cfg_provider").value;
+  if(v==="custom")return;
+  const p=PRESETS[v];
+  $("cfg_api_base").value=p.api_base;
+  $("cfg_model").value=p.model;
+}
+
+/* ---------- mini markdown ---------- */
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function inline(s){return s
+  .replace(/`([^`]+)`/g,"<code>$1</code>")
+  .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
+  .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>')}
+function mdRender(src){
+  const lines=esc(src).split(/\r?\n/);const out=[];let inList=false,inCode=false,ol=false;
+  const closeList=()=>{if(inList){out.push("</ul>");inList=false;ol=false}};
+  for(const raw of lines){
+    const l=raw;
+    if(/^```/.test(l.trim())){inCode=!inCode;closeList();out.push(inCode?"<pre><code>":"</code></pre>");continue}
+    if(inCode){out.push(l+"\n");continue}
+    if(/^\s*$/.test(l)){closeList();continue}
+    let m=l.match(/^\s*(#{1,4})\s+(.*)$/);
+    if(m){closeList();const lv=m[1].length;out.push(`<h${lv}>${inline(m[2])}</h${lv}>`);continue}
+    m=l.match(/^\s*\d+\.\s+(.*)$/);
+    if(m){if(!inList||!ol){closeList();out.push('<ul>');inList=true;ol=true}out.push(`<li>${inline(m[1])}</li>`);continue}
+    m=l.match(/^\s*[-*]\s+(.*)$/);
+    if(m){if(!inList){out.push("<ul>");inList=true}out.push(`<li>${inline(m[1])}</li>`);continue}
+    if(/^&gt;\s?/.test(l)){closeList();out.push(`<blockquote>${inline(l.slice(4))}</blockquote>`);continue}
+    if(/^---+$/.test(l.trim())){closeList();out.push("<hr>");continue}
+    closeList();
+    out.push(`<p>${inline(l)}</p>`);
+  }
+  closeList();
+  return out.join("\n");
+}
+
+async function api(path,opts){
+  const r=await fetch(path,opts);
+  if(!r.ok){let msg="请求失败 "+r.status;try{msg=(await r.json()).detail||msg}catch(e){}throw new Error(msg)}
+  return r.json();
+}
+
+async function start(){
+  const url=$("url").value.trim();
+  if(!url)return showErr("请先粘贴B站视频链接");
+  showErr("");
+  try{
+    const d=await api("/api/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
+    currentTask=d.task_id;
+    $("resultCard").style.display="none";
+    $("startBtn").disabled=true;
+    setProgress({stage:"queue",percent:0,message:"排队中…"});
+    pollTimer=setInterval(poll,800);
+  }catch(e){showErr(e.message)}
+}
+
+async function poll(){
+  if(!currentTask)return;
+  try{
+    const t=await api("/api/task/"+currentTask);
+    setProgress(t);
+    if(t.status==="done"){
+      clearInterval(pollTimer);currentTask=null;$("startBtn").disabled=false;
+      $("progressCard").style.display="none";
+      showResult(t.result);
+    }else if(t.status==="error"||t.status==="stopped"){
+      clearInterval(pollTimer);currentTask=null;$("startBtn").disabled=false;
+      $("progressCard").style.display="none";
+      showErr((t.status==="stopped"?"已取消":"失败")+"："+(t.error||"未知错误"));
+    }
+  }catch(e){}
+}
+
+const STAGES={queue:"排队中",parse:"解析链接",info:"获取信息",subtitle:"获取字幕",download:"下载音频",omni:"AI 听音频",summarize:"AI 总结",save:"保存",done:"完成"};
+function setProgress(t){
+  $("askRow").style.display="none";
+  $("progressCard").style.display="block";
+  $("stageLabel").textContent=(STAGES[t.stage]||t.stage)+"…";
+  $("barFill").style.width=t.percent+"%";
+  $("pPct").textContent=Math.round(t.percent)+"%";
+  $("pMsg").textContent=t.message||"";
+}
+
+function showResult(res){
+  lastResult=res.summary_md;lastFileName=res.output_file||"seeglow.md";
+  $("resultTitle").textContent=res.title;
+  $("mdBody").innerHTML=mdRender(lastResult);
+  $("resultCard").style.display="block";
+  $("askRow").style.display="flex";
+  window.scrollTo({top:0,behavior:"smooth"});
+  loadHistory();
+}
+
+function showErr(msg){
+  const b=$("errBox");
+  if(!msg){b.style.display="none";return}
+  b.textContent=msg;b.style.display="block";
+}
+
+async function stopTask(){if(currentTask){await api("/api/stop/"+currentTask,{method:"POST"}).catch(()=>{})}}
+
+function copyResult(){navigator.clipboard.writeText(lastResult).then(()=>alert("已复制 Markdown"))}
+function downloadResult(){
+  const blob=new Blob([lastResult],{type:"text/markdown;charset=utf-8"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=lastFileName;a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function loadHistory(){
+  try{
+    const list=await api("/api/history");
+    const el=$("historyList");
+    if(!list.length){el.innerHTML='<div class="empty">暂无记录</div>';return}
+    el.innerHTML=list.map(f=>{
+      const d=new Date(f.mtime*1000);
+      return `<div class="h-item" onclick="viewFile('${encodeURIComponent(f.name)}')"><div class="t">${esc(f.name.replace(/\.md$/,"").replace(/^\d{8}-/,""))}</div><div class="d">${d.toLocaleDateString()} · ${(f.size/1024).toFixed(1)} KB</div></div>`;
+    }).join("");
+  }catch(e){}
+}
+
+async function viewFile(enc){
+  try{
+    const d=await api("/api/output?name="+enc);
+    lastResult=d.content;lastFileName=d.name;
+    $("resultTitle").textContent=d.name.replace(/\.md$/,"").replace(/^\d{8}-/,"");
+    $("mdBody").innerHTML=mdRender(d.content);
+    $("resultCard").style.display="block";
+    window.scrollTo({top:0,behavior:"smooth"});
+  }catch(e){showErr(e.message)}
+}
+
+async function openSettings(){
+  settingsDlg.showModal();
+  try{
+    const d=await api("/api/config");
+    const c=d.config||d;
+    $("cfg_provider").value=detectProvider(c.api_base||"");
+    $("cfg_api_base").value=c.api_base||"";
+    $("cfg_model").value=c.model||"";
+    $("cfg_temperature").value=c.temperature??0.3;
+    $("keyNow").textContent=c.api_key_masked||"未配置";
+    $("sdNow").textContent=c.has_sessdata?"已配置":"未配置";
+  }catch(e){}
+}
+
+async function saveSettings(){
+  const body={
+    provider:$("cfg_provider").value,
+    api_base:$("cfg_api_base").value.trim(),
+    api_key:$("cfg_api_key").value.trim(),
+    model:$("cfg_model").value.trim(),
+    temperature:parseFloat($("cfg_temperature").value)||0.3,
+    sessdata:$("cfg_sessdata").value.trim()
+  };
+  try{
+    await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    settingsDlg.close();$("cfg_api_key").value="";$("cfg_sessdata").value="";
+  }catch(e){alert("保存失败："+e.message)}
+}
+
+loadHistory();
+</script>
+</body>
+</html>

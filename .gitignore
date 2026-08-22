@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+config.json
+build/
+dist/
+*.spec
+output/
+拾光/
+seeglow_*.m4s
