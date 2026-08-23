@@ -170,6 +170,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
           <span style="display:flex;gap:8px;align-items:center">
             <select id="styleSel" style="background:var(--hover);border:1.5px solid var(--line);border-radius:8px;padding:4px 8px;font-size:12.5px;color:var(--sub);font-family:inherit;outline:none;cursor:pointer">
               <option value="general">通用笔记</option>
+              <option value="speed">⚡ 速学模式</option>
               <option value="study">学习笔记</option>
               <option value="tutorial">教程步骤</option>
               <option value="meeting">会议纪要</option>
@@ -277,7 +278,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
     <button onclick="actDlg.close()">关闭</button>
     <button class="pri" id="actBtn" onclick="doActivate('code')">激 活</button>
   </div>
-  <div class="note" style="margin-top:18px">赞助 ¥9.9/月起 · <a href="https://afdian.com/a/Orisyan" target="_blank" style="color:#c2620a">爱发电主页</a> · 免费试用 3 次</div>
+  <div class="note" style="margin-top:18px">赞助 ¥9.9/月起 · <a href="https://afdian.com/a/Orisyan" target="_blank" style="color:#c2620a">爱发电主页</a> · 每天免费 3 次（次日自动恢复）</div>
 </dialog>
 
 <dialog id="rewriteDlg">
@@ -424,7 +425,7 @@ async function loadPro(){
     chip.textContent="已激活 · "+(proState.expiry||"");
     chip.classList.add("ok");
   }else if(proState.state==="trial"){
-    chip.textContent="试用 · 剩 "+(proState.uses_left??0)+" 次";
+    chip.textContent="试用 · 今日剩 "+(proState.uses_left??0)+" 次";
   }else{
     chip.textContent="未激活 · 点此激活";
     chip.classList.add("warn");
