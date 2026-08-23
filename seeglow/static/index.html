@@ -632,7 +632,7 @@ function downloadBlob(text, mime, name, withBom) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
-function exportOPML(){
+async function exportOPML(){
   if(!lastResult)return alert("请先生成总结");
   // 解析标题为层级树（## 一句话总结 → ### 子节 …）
   const heads=[];
