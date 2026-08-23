@@ -607,21 +607,40 @@ async function loadDanmaku(res){
 }
 
 /* ---------- 导出：思维导图 OPML / Anki 闪卡 ---------- */
+/* 下载工具：立即 revokeObjectURL 会让下载失败（下载是异步启动的），必须延迟释放 */
+function downloadBlob(text, mime, name, withBom) {
+  const blob = new Blob([withBom ? "\ufeff" + text : text], { type: mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
 function exportOPML(){
   if(!lastResult)return alert("请先生成总结");
-  const lines=lastResult.split(/\r?\n/);const nodes=[];const stack=[];
-  let body="";
-  for(const ln of lines){
-    const m=ln.match(/^(#{1,4})\s+(.*)$/);
-    if(!m)continue;
-    const lv=m[1].length,t=esc(m[2].replace(/[*`]/g,"").slice(0,60));
-    body+="  ".repeat(lv)+`<outline text="${t}"/>\n`;
+  // 解析标题为层级树（## 一句话总结 → ### 子节 …）
+  const heads=[];
+  for(const ln of lastResult.split(/\r?\n/)){
+    const m=ln.match(/^(#{1,4})\s+(.+)$/);
+    if(m)heads.push({lv:m[1].length,t:m[2].replace(/[*`]/g,"").slice(0,60)});
   }
-  const opml=`<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>${esc($("resultTitle").textContent)}</title></head><body>\n${body}</body></opml>`;
-  const blob=new Blob([opml],{type:"text/x-opml;charset=utf-8"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-  a.download=(lastFileName||"seeglow").replace(/\.md$/,"")+".opml";a.click();
-  URL.revokeObjectURL(a.href);
+  if(!heads.length)return alert("笔记中没有标题，无法生成导图");
+  const q=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const root={lv:0,t:($("resultTitle").textContent||"拾光总结").slice(0,60),ch:[]};
+  const st=[root];
+  for(const h of heads){
+    while(st.length>1&&st[st.length-1].lv>=h.lv)st.pop();
+    const node={lv:h.lv,t:h.t,ch:[]};
+    st[st.length-1].ch.push(node);st.push(node);
+  }
+  const ser=n=>n.ch.length
+    ?`<outline text="${q(n.t)}">${n.ch.map(ser).join("")}</outline>`
+    :`<outline text="${q(n.t)}"/>`;
+  const opml=`<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>${q(root.t)}</title></head><body>\n${ser(root)}\n</body></opml>`;
+  downloadBlob(opml, "text/x-opml;charset=utf-8",
+    (lastFileName || "seeglow").replace(/\.md$/, "") + ".opml");
 }
 async function makeFlashcards(){
   if(!lastFileName)return alert("请先生成总结");
@@ -630,10 +649,8 @@ async function makeFlashcards(){
     const d=await api("/api/flashcards",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({file:lastFileName,count:10})});
     const tsv=d.cards.map(c=>`${c.q.replace(/\t|\n/g," ")}\t${c.a.replace(/\t|\n/g," ")}`).join("\n");
-    const blob=new Blob(["\ufeff"+tsv],{type:"text/plain;charset=utf-8"});
-    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-    a.download=(lastFileName||"seeglow").replace(/\.md$/,"")+"-闪卡.txt";a.click();
-    URL.revokeObjectURL(a.href);
+    downloadBlob(tsv, "text/plain;charset=utf-8",
+      (lastFileName || "seeglow").replace(/\.md$/, "") + "-闪卡.txt", true);
     alert(`已生成 ${d.cards.length} 张闪卡：文件可直接导入 Anki（分隔符为制表符）`);
   }catch(e){alert("闪卡生成失败："+e.message)}
   btn.disabled=false;btn.textContent="闪卡 .txt";
@@ -684,9 +701,8 @@ async function stopTask(){if(currentTask){await api("/api/stop/"+currentTask,{me
 
 function copyResult(){navigator.clipboard.writeText(lastResult).then(()=>alert("已复制 Markdown"))}
 function downloadResult(){
-  const blob=new Blob([lastResult],{type:"text/markdown;charset=utf-8"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=lastFileName;a.click();
-  URL.revokeObjectURL(a.href);
+  if(!lastResult)return alert("请先生成总结");
+  downloadBlob(lastResult, "text/markdown;charset=utf-8", lastFileName || "seeglow.md");
 }
 
 let qaHistory=[],qaFile="";
