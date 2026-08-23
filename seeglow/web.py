@@ -368,6 +368,115 @@ def save_export(req: SaveExportReq):
     return {"ok": True, "path": path}
 
 
+# ---------------- 图文改写（小红书/公众号等） ----------------
+
+class RewriteReq(BaseModel):
+    file: str
+    target: str  # xiaohongshu / gongzhonghao / weibo / zhihu
+
+
+REWRITE_GUIDES = {
+    "xiaohongshu": (
+        "把这份视频笔记改写成一篇小红书笔记。要求：\n"
+        "- 第一行给标题：20字内，吸睛，含1~2个emoji\n"
+        "- 正文300~500字，口语化、真诚分享感，分成4~6个短段落，每段开头带一个emoji\n"
+        "- 保留最有信息量的要点和时间点（[mm:ss]格式），像在给朋友安利这支视频\n"
+        "- 结尾单独一行给3~6个#标签\n"
+        "- 不要编造笔记中没有的信息"
+    ),
+    "gongzhonghao": (
+        "把这份视频笔记改写成一篇公众号文章。要求：\n"
+        "- 标题：吸引点击但不做标题党，25字内\n"
+        "- 开头一段60字以内的导语，抛出问题或痛点\n"
+        "- 正文800~1200字，用2~3个小标题组织，逻辑顺畅，要点完整保留\n"
+        "- 关键处保留时间点引用，如（04:15处提到）\n"
+        "- 结尾一段总结+引导「关注我看更多视频笔记」"
+    ),
+    "weibo": (
+        "把这份视频笔记改写成一条微博。要求：\n"
+        "- 200字以内，观点鲜明，适合快速转发\n"
+        "- 可用1~2个emoji，结尾带2~3个#标签\n"
+        "- 保留最有冲击力的1~2个数据或金句"
+    ),
+    "zhihu": (
+        "把这份视频笔记改写成一篇知乎回答（问题是：如何看待/评价这支视频的内容？）。要求：\n"
+        "- 先给结论（一句话加粗）\n"
+        "- 然后3~5条论据展开，引用视频中的具体内容和时间点\n"
+        "- 语气客观理性，结尾注明「以上内容整理自视频，建议观看原片」\n"
+        "- 总长400~700字"
+    ),
+}
+
+
+@app.post("/api/rewrite")
+def rewrite(req: RewriteReq):
+    """把已保存的视频笔记改写成平台文案（小红书/公众号/微博/知乎）。"""
+    from .summarize import LLMClient
+
+    guide = REWRITE_GUIDES.get(req.target)
+    if not guide:
+        raise HTTPException(400, f"不支持的改写目标：{req.target}")
+
+    base = _output_dir().resolve()
+    fname = req.file if req.file.endswith(".md") else req.file + ".md"
+    md_path = (base / fname).resolve()
+    if md_path.parent != base or not md_path.exists():
+        raise HTTPException(404, "未找到该笔记")
+    summary = md_path.read_text(encoding="utf-8")[:8000]
+
+    cfg = load_config()
+    client = LLMClient(cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"),
+                       cfg.get("temperature", 0.3))
+    prompt = f"{guide}\n\n【视频笔记】\n{summary}"
+    try:
+        text = client.chat([
+            {"role": "system", "content": "你是资深新媒体编辑，擅长把内容改写成不同平台的爆款文案。直接输出正文，不要解释。"},
+            {"role": "user", "content": prompt},
+        ])
+    except Exception as e:
+        raise HTTPException(500, f"改写失败：{str(e)[:120]}")
+    return {"text": text}
+
+
+# ---------------- 字幕导出（SRT / VTT） ----------------
+
+def _fmt_srt_ts(sec: float) -> str:
+    ms = int(round(sec * 1000))
+    h, rem = divmod(ms, 3600000)
+    m, rem = divmod(rem, 60000)
+    s, ms = divmod(rem, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def _fmt_vtt_ts(sec: float) -> str:
+    return _fmt_srt_ts(sec).replace(",", ".")
+
+
+@app.get("/api/export_srt")
+def export_srt(name: str = Query(...), fmt: str = Query("srt")):
+    """导出该笔记的视频字幕（仅「B站字幕」来源的笔记有完整字幕）。"""
+    base = _output_dir().resolve()
+    fname = name if name.endswith(".md") else name + ".md"
+    ctx_path = (base / (fname + ".ctx.json")).resolve()
+    if ctx_path.parent != base or not ctx_path.exists():
+        raise HTTPException(404, "未找到字幕数据")
+    items = (_json.loads(ctx_path.read_text(encoding="utf-8")) or {}).get("items") or []
+    # AI直听路径的分段是小结而非逐句字幕；字幕路径是逐句（start/end/text）
+    has_ts = all(("start" in it and "end" in it) for it in items) and len(items) >= 5
+    if not has_ts:
+        raise HTTPException(400, "该笔记由 AI 直听生成，没有逐句字幕（B站有字幕的视频才能导出）")
+
+    fmt = "vtt" if fmt == "vtt" else "srt"
+    fmt_ts = _fmt_vtt_ts if fmt == "vtt" else _fmt_srt_ts
+    lines = ["WEBVTT\n"] if fmt == "vtt" else []
+    for i, it in enumerate(items, 1):
+        a, b = fmt_ts(it["start"]), fmt_ts(it["end"])
+        lines.append(f"{i}\n{a} --> {b}\n{it['text']}\n")
+    content = "\n".join(lines)
+    return {"ok": True, "fmt": fmt, "content": content,
+            "filename": fname.replace(".md", f".{fmt}")}
+
+
 @app.post("/api/flashcards")
 def flashcards(req: CardsReq):
     """从已保存的视频笔记生成 Anki 闪卡（Q&A 对）。"""

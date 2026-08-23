@@ -219,6 +219,8 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
             <button onclick="downloadResult()">下载 .md</button>
             <button onclick="exportOPML()">导图 .opml</button>
             <button id="cardBtn" onclick="makeFlashcards()">闪卡 .txt</button>
+            <button onclick="openRewrite()">✍️ 改写文案</button>
+            <button id="srtBtn" onclick="exportSRT()" title="仅B站有字幕的视频可导">字幕 .srt</button>
           </div>
         </div>
         <div id="dmWrap" style="display:none;margin-top:14px">
@@ -276,6 +278,26 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
     <button class="pri" id="actBtn" onclick="doActivate('code')">激 活</button>
   </div>
   <div class="note" style="margin-top:18px">赞助 ¥9.9/月起 · <a href="https://afdian.com/a/Orisyan" target="_blank" style="color:#c2620a">爱发电主页</a> · 免费试用 3 次</div>
+</dialog>
+
+<dialog id="rewriteDlg">
+  <h3>改写文案</h3>
+  <div class="frow"><label>改写成什么平台的文案</label>
+    <select id="rwTarget">
+      <option value="xiaohongshu">小红书笔记</option>
+      <option value="gongzhonghao">公众号文章</option>
+      <option value="weibo">微博短文案</option>
+      <option value="zhihu">知乎回答</option>
+    </select></div>
+  <button class="pri" style="width:100%;border:none;border-radius:10px;padding:10px;font-size:14px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:inherit" onclick="doRewrite()">开始改写</button>
+  <div id="rwMsg" style="font-size:12.5px;color:var(--sub);margin-top:8px;min-height:18px"></div>
+  <div class="frow" style="margin-top:10px"><label>改写结果（可直接复制发布）</label>
+    <textarea id="rwOut" rows="10" style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:10px 13px;font-size:13.5px;color:var(--ink);outline:none;font-family:inherit;resize:vertical" placeholder="点击「开始改写」后这里会生成文案"></textarea></div>
+  <div class="dlg-foot">
+    <button onclick="rewriteDlg.close()">关闭</button>
+    <button onclick="copyRewrite()">复制文案</button>
+    <button class="pri" onclick="saveRewrite()">保存 .txt</button>
+  </div>
 </dialog>
 
 <dialog id="feedDlg">
@@ -669,6 +691,44 @@ async function makeFlashcards(){
     alert(`已生成 ${d.cards.length} 张闪卡` + (r.saved ? `，已保存：\n${r.path}` : "（Anki 导入：分隔符选制表符）"));
   }catch(e){alert("闪卡生成失败："+e.message)}
   btn.disabled=false;btn.textContent="闪卡 .txt";
+}
+
+/* ---------- 图文改写 & 字幕导出 ---------- */
+function openRewrite(){
+  if(!lastFileName)return alert("请先生成或打开一份笔记");
+  rewriteDlg.showModal();
+}
+async function doRewrite(){
+  const m=$("rwMsg");
+  m.textContent="改写中，约需20~40秒…";
+  $("rwOut").value="";
+  try{
+    const d=await api("/api/rewrite",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({file:lastFileName,target:$("rwTarget").value})});
+    $("rwOut").value=d.text;
+    m.textContent="改写完成，可直接复制发布 ✦";
+  }catch(e){m.textContent="失败："+e.message}
+}
+function copyRewrite(){
+  const v=$("rwOut").value;
+  if(!v)return alert("还没有改写内容");
+  navigator.clipboard.writeText(v).then(()=>alert("已复制"));
+}
+async function saveRewrite(){
+  const v=$("rwOut").value;
+  if(!v)return alert("还没有改写内容");
+  const label=$("rwTarget").selectedOptions[0].textContent;
+  const r=await saveOrDownload(v,"text/plain;charset=utf-8",
+    (lastFileName||"seeglow").replace(/\.md$/,"")+"-"+label+".txt",true);
+  if(r.saved)alert("已保存：\n"+r.path);
+}
+async function exportSRT(){
+  if(!lastFileName)return alert("请先生成或打开一份笔记");
+  try{
+    const d=await api("/api/export_srt?name="+encodeURIComponent(lastFileName));
+    const r=await saveOrDownload(d.content,"text/plain;charset=utf-8",d.filename,true);
+    if(r.saved)alert("字幕已保存：\n"+r.path);
+  }catch(e){alert("导出失败："+e.message)}
 }
 
 /* ---------- 追更 ---------- */
