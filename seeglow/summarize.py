@@ -74,6 +74,36 @@ SYSTEM_PROMPT = (
 
 CHUNK_CHARS = 3600
 
+# 总结风格模板：附加到各总结 prompt 的【输出要求】前
+STYLE_GUIDES = {
+    "general": "",
+    "study": (
+        "【风格：学习笔记】\n"
+        "- 「核心要点」突出知识点与结论，重要术语加粗\n"
+        "- 额外增加一节「## 术语表」：3~8 个关键概念 + 一句话通俗解释\n"
+        "- 时间线按知识模块组织，标注每个模块覆盖的时间范围\n"
+    ),
+    "tutorial": (
+        "【风格：教程步骤】\n"
+        "- 把可操作的内容整理为「## 操作步骤」：编号步骤，写明参数/路径/命令/前置条件\n"
+        "- 额外增加「## 常见坑与提示」：视频中提到的坑、报错与解决办法\n"
+    ),
+    "meeting": (
+        "【风格：会议纪要】\n"
+        "- 要点按议题归纳，一个议题一个小节\n"
+        "- 额外增加「## 结论与待办」：逐条写明 做什么 + 谁负责（未指明则写「主讲人/未指明」）\n"
+    ),
+    "review": (
+        "【风格：轻松杂谈】\n"
+        "- 语言轻快有梗，但事实必须忠于原片，不编造\n"
+        "- 金句多摘 1~2 条；额外增加「## 名场面」：3~5 个值得一看的时间点（[mm:ss]）+ 一句话安利\n"
+    ),
+}
+
+
+def style_hint(style: str) -> str:
+    return STYLE_GUIDES.get(style or "general", "")
+
 
 def chunk_text(text: str, max_chars: int = CHUNK_CHARS):
     lines = text.splitlines()
@@ -97,6 +127,7 @@ SINGLE_PROMPT = """请根据下面的B站视频转写稿，生成一份高质量
 【转写稿】（方括号内为时间点）
 {transcript}
 
+{style_hint}
 【输出要求】
 严格使用以下 Markdown 结构，直接以 `## 一句话总结` 开头，不要输出一级标题：
 
@@ -136,13 +167,14 @@ REDUCE_PROMPT = """下面是一支长视频各片段的小结，请整合成一�
 【各段小结】
 {joined}
 
+{style_hint}
 【输出要求】
 严格使用以下结构，直接以 `## 一句话总结` 开头：
 ## 一句话总结 / ## 核心要点 / ## 内容时间线 / ## 金句摘录 / ## 适合谁看 & 结语
 要求：合并重复内容；时间线按时间顺序排列并保留 `[mm:ss]` 时间点；总长度控制在 600~1200 字。"""
 
 
-def summarize_transcript(transcript_text: str, meta: str, client: LLMClient, progress_cb=None):
+def summarize_transcript(transcript_text: str, meta: str, client: LLMClient, progress_cb=None, style="general"):
     def report(p, msg=""):
         if progress_cb:
             progress_cb(min(max(p, 0.0), 1.0), msg)
@@ -155,7 +187,8 @@ def summarize_transcript(transcript_text: str, meta: str, client: LLMClient, pro
         md = client.chat(
             [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": SINGLE_PROMPT.format(meta=meta, transcript=chunks[0])},
+                {"role": "user", "content": SINGLE_PROMPT.format(
+                    meta=meta, transcript=chunks[0], style_hint=style_hint(style))},
             ]
         )
         report(1.0, "总结完成")
@@ -180,7 +213,8 @@ def summarize_transcript(transcript_text: str, meta: str, client: LLMClient, pro
     md = client.chat(
         [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": REDUCE_PROMPT.format(meta=meta, joined=joined)},
+            {"role": "user", "content": REDUCE_PROMPT.format(
+                meta=meta, joined=joined, style_hint=style_hint(style))},
         ]
     )
     report(1.0, "总结完成")
@@ -205,6 +239,7 @@ AUDIO_SINGLE_PROMPT = """你是视频内容分析师。以下是视频《{title}
 
 听完后生成一份高质量中文总结笔记，严格使用以下 Markdown 结构，直接以 `## 一句话总结` 开头：
 
+{style_hint}
 ## 一句话总结
 用一句话概括这支视频讲了什么。
 
@@ -225,6 +260,7 @@ REDUCE_AUDIO_PROMPT = """下面是 AI 逐段聆听视频《{title}》音频后�
 【各段小结】
 {joined}
 
+{style_hint}
 【输出要求】
 严格使用以下结构，直接以 `## 一句话总结` 开头：
 ## 一句话总结 / ## 核心要点 / ## 内容时间线 / ## 金句摘录 / ## 适合谁看 & 结语
@@ -283,7 +319,7 @@ def _listen_chunk(client, system_prompt, prompt, audio_path, preferred_style):
         raise
 
 
-def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=None, stop_check=None, notice_cb=None):
+def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=None, stop_check=None, notice_cb=None, style="general"):
     def notice(msg):
         if notice_cb:
             notice_cb(msg)
@@ -325,7 +361,10 @@ def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=Non
             md, _ = _listen_chunk(
                 client,
                 SYSTEM_PROMPT,
-                AUDIO_SINGLE_PROMPT.format(title=title, start=fmt_ts(starts[0]), end=fmt_ts(total_sec)),
+                AUDIO_SINGLE_PROMPT.format(
+                    title=title, start=fmt_ts(starts[0]), end=fmt_ts(total_sec),
+                    style_hint=style_hint(style),
+                ),
                 paths[0],
                 "input_audio",
             )
@@ -370,7 +409,8 @@ def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=Non
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": REDUCE_AUDIO_PROMPT.format(title=title, joined=joined),
+                    "content": REDUCE_AUDIO_PROMPT.format(
+                        title=title, joined=joined, style_hint=style_hint(style)),
                 },
             ]
         )

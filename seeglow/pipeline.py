@@ -17,7 +17,7 @@ from . import bilibili, summarize as sz_mod
 from .config import load_config
 
 
-def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, stop_check):
+def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, stop_check, style="general"):
     """处理单个分P，返回 {"src", "md", "segs"}。prog(stage, frac 0~1, msg)。"""
     sess = cfg.get("sessdata", "")
 
@@ -40,6 +40,7 @@ def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, sto
             meta,
             client,
             progress_cb=lambda p, msg="": prog("summarize", 0.55 + p * 0.42, msg),
+            style=style,
         )
         return {
             "src": "B站字幕",
@@ -71,6 +72,7 @@ def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, sto
             progress_cb=lambda p, msg="": prog("omni", 0.28 + p * 0.66, msg),
             stop_check=stop_check,
             notice_cb=lambda m: prog("omni", 0.3, m),
+            style=style,
         )
         return {
             "src": f"AI直听·{client.model}",
@@ -97,6 +99,7 @@ def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, sto
 def run_pipeline(url: str, options: dict | None, progress_cb, stop_check=None) -> dict:
     cfg = load_config()
     opts = options or {}
+    style = opts.get("style") or "general"
     client = sz_mod.LLMClient(
         cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"), cfg.get("temperature", 0.3)
     )
@@ -147,6 +150,7 @@ def run_pipeline(url: str, options: dict | None, progress_cb, stop_check=None) -
             cfg=cfg,
             prog=prog,
             stop_check=stop_check,
+            style=style,
         )
         results.append((pg, r))
 
@@ -211,14 +215,141 @@ def run_pipeline(url: str, options: dict | None, progress_cb, stop_check=None) -
     )
 
     report("done", 100, "完成")
+    first_pg = results[0][0]
     return {
         "title": title,
         "author": owner,
         "url": f"https://www.bilibili.com/video/{bvid}",
+        "bvid": bvid,
+        "cid": first_pg["cid"],          # 供前端拉取弹幕高能时间轴
+        "page": first_pg["page"],
         "duration": bilibili.fmt_ts(info["duration"]),
+        "duration_sec": info["duration"],
         "source": src_label,
         "pages_total": len(pages),
         "pages_done": [pg["page"] for pg, _ in results],
         "summary_md": summary_md,
         "output_file": fname,
+    }
+
+
+def run_file_pipeline(file_path, display_title: str, style: str, progress_cb, stop_check=None) -> dict:
+    """总结本地音视频文件：解码 → AI 直听 → 落盘 Markdown。"""
+    from pathlib import Path
+
+    cfg = load_config()
+    client = sz_mod.LLMClient(
+        cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"), cfg.get("temperature", 0.3)
+    )
+
+    def report(stage: str, percent: float, message: str = ""):
+        progress_cb({"stage": stage, "percent": round(max(0.0, min(percent, 100.0)), 1), "message": message})
+
+    title = display_title or Path(file_path).stem or "本地文件"
+    report("omni", 5, "解码本地文件…")
+    try:
+        res = sz_mod.summarize_audio_direct(
+            str(file_path), title, client,
+            progress_cb=lambda p, msg="": report("omni", 10 + p * 84, msg),
+            stop_check=stop_check,
+            notice_cb=lambda m: report("omni", 12, m),
+            style=style,
+        )
+    except Exception as e:
+        if "取消" in str(e):
+            raise
+        raise RuntimeError(f"AI 直听本地文件失败：{str(e)[:150]}") from e
+
+    # 落盘
+    report("save", 96, "保存结果…")
+    out_dir = Path(cfg.get("output_dir"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    today = f"{datetime.date.today():%Y%m%d}"
+    fname = f"{today}-本地-{bilibili.safe_filename(title)}.md"
+    header = (
+        f"# {title}\n\n"
+        f"> 来源：本地文件 · 由 [拾光 SeeGlow](https://github.com/Orisyan/seeglow) 生成于 {now}\n\n"
+    )
+    (out_dir / fname).write_text(header + res["md"] + "\n", encoding="utf-8")
+    (out_dir / f"{fname}.ctx.json").write_text(
+        json.dumps({"title": title, "url": "", "items": res["ctx"]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    report("done", 100, "完成")
+    return {
+        "title": title,
+        "author": "",
+        "url": "",
+        "bvid": "",
+        "cid": 0,
+        "duration": "",
+        "source": f"本地文件·{client.model}",
+        "summary_md": res["md"],
+        "output_file": fname,
+    }
+
+
+def run_batch_pipeline(items: list, style: str, progress_cb, stop_check=None) -> dict:
+    """批量总结：items=[{bvid,title}]，逐个跑完整流水线，最后生成目录索引。
+
+    单个视频失败不中断批次，记录错误继续。
+    """
+    n = len(items)
+    done, failures, files = 0, [], []
+
+    def report(stage, percent, message=""):
+        progress_cb({"stage": stage, "percent": round(percent, 1), "message": message})
+
+    for i, it in enumerate(items):
+        if stop_check and stop_check():
+            raise RuntimeError("已取消")
+        base = i * (96.0 / max(n, 1))
+        span = 96.0 / max(n, 1)
+
+        def prog(d, _b=base, _s=span, _i=i, _n=n, _t=it.get("title", "")):
+            report(
+                d["stage"], _b + d["percent"] / 100.0 * _s * 0.98,
+                f"({_i + 1}/{_n}) {_t[:24]} · {d['message']}",
+            )
+
+        try:
+            r = run_pipeline(f"https://www.bilibili.com/video/{it['bvid']}",
+                             {"style": style}, prog, stop_check)
+            files.append({"title": it.get("title") or r["title"], "file": r["output_file"],
+                          "url": r["url"], "author": r.get("author", "")})
+        except Exception as e:
+            if "取消" in str(e):
+                raise
+            failures.append({"title": it.get("title", it["bvid"]), "error": str(e)[:120]})
+
+    report("save", 97, "生成目录索引…")
+    out_dir = Path(load_config()["output_dir"])
+    today = f"{datetime.date.today():%Y%m%d}"
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    index_name = f"{today}-批量总结{n}支视频.md"
+    lines = [f"# 批量总结 · {n} 支视频\n",
+             f"> 由 [拾光 SeeGlow](https://github.com/Orisyan/seeglow) 生成于 {now} · 成功 {len(files)} 支"
+             + (f" · 失败 {len(failures)} 支" if failures else "") + "\n"]
+    for f in files:
+        lines.append(f"- [{f['title']}]({f['url']})  \n  笔记：`拾光/{f['file']}`")
+    if failures:
+        lines.append("\n## 失败列表\n")
+        lines += [f"- {x['title']}：{x['error']}" for x in failures]
+    index_content = "\n".join(lines) + "\n"
+    (out_dir / index_name).write_text(index_content, encoding="utf-8")
+
+    report("done", 100, f"完成：成功 {len(files)} / {n}")
+    return {
+        "title": f"批量总结 · 成功 {len(files)}/{n} 支视频",
+        "author": "",
+        "url": "",
+        "bvid": "",
+        "cid": 0,
+        "duration": "",
+        "source": "批量模式",
+        "summary_md": index_content,
+        "output_file": index_name,
+        "files": files,
+        "failures": failures,
     }

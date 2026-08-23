@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "拾光 SeeGlow · B站一键总结",
+  "version": "0.4.0",
+  "description": "在B站视频页一键发送链接到本机的拾光 SeeGlow 生成总结笔记",
+  "permissions": [],
+  "host_permissions": [],
+  "content_scripts": [
+    {
+      "matches": ["*://www.bilibili.com/video/*", "*://www.bilibili.com/bangumi/play/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

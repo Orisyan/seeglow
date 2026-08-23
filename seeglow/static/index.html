@@ -23,6 +23,8 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .logo .en{font-size:10.5px;letter-spacing:.3em;color:var(--sub)}
 .btn-chip{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:8px 20px;font-size:13.5px;color:var(--sub);cursor:pointer;font-family:inherit;transition:.15s}
 .btn-chip:hover{color:var(--ink);border-color:#c4c4c8}
+.btn-chip.warn{color:#b45309;border-color:#fcd34d;background:#fffbeb}
+.btn-chip.ok{color:#15803d;border-color:#bbf7d0;background:#f0fdf4}
 
 /* cards */
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.05),0 8px 28px -14px rgba(0,0,0,.08)}
@@ -51,6 +53,8 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .picker button{border:none;border-radius:9px;padding:8px 18px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:inherit}
 .picker button:hover{filter:brightness(1.06)}
 .picker button.alt{background:var(--card);color:var(--sub);border:1.5px solid var(--line);font-weight:500}
+.file-btn{background:var(--card);border:1.5px solid var(--line);border-radius:8px;padding:4px 10px;font-size:12.5px;color:var(--sub);cursor:pointer;font-family:inherit}
+.file-btn:hover{color:var(--ink);border-color:#c4c4c8}
 .err{margin-top:16px;background:#fef2f2;border:1px solid #fecaca;color:var(--err);padding:12px 16px;border-radius:12px;font-size:13.5px;line-height:1.7;display:none;white-space:pre-wrap}
 
 /* progress */
@@ -146,7 +150,11 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
         <span class="en">S E E G L O W</span>
       </span>
     </a>
-    <button class="btn-chip" onclick="openSettings()">设置</button>
+    <span style="display:flex;gap:10px;align-items:center">
+      <button class="btn-chip" id="feedChip" onclick="openFeed()" style="display:none">追更</button>
+      <button class="btn-chip" id="proChip" style="display:none" onclick="openActivate()">试用</button>
+      <button class="btn-chip" onclick="openSettings()">设置</button>
+    </span>
   </header>
 
   <div class="grid">
@@ -157,13 +165,40 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
                  onkeydown="if(event.key==='Enter')start()">
           <button class="go" id="startBtn" onclick="start()">开始总结</button>
         </div>
-        <div class="hint">支持链接 / BV 号 / av 号 / b23.tv 短链 · 总结仅保存在本机</div>
+        <div class="hint" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <span>支持链接 / BV 号 / av 号 / b23.tv 短链 / 合集与收藏夹链接 · 总结仅保存在本机</span>
+          <span style="display:flex;gap:8px;align-items:center">
+            <select id="styleSel" style="background:var(--hover);border:1.5px solid var(--line);border-radius:8px;padding:4px 8px;font-size:12.5px;color:var(--sub);font-family:inherit;outline:none;cursor:pointer">
+              <option value="general">通用笔记</option>
+              <option value="study">学习笔记</option>
+              <option value="tutorial">教程步骤</option>
+              <option value="meeting">会议纪要</option>
+              <option value="review">轻松杂谈</option>
+            </select>
+            <button class="file-btn" onclick="fileInput.click()">📁 本地音视频</button>
+            <input type="file" id="fileInput" style="display:none"
+                   accept=".mp4,.mkv,.flv,.mov,.avi,.webm,.mp3,.m4a,.wav,.flac,.aac,.ogg,.m4s,.ts"
+                   onchange="if(this.files[0])uploadFile(this.files[0]);this.value=''">
+          </span>
+        </div>
 
         <div class="picker" id="pagePicker">
           <span class="pinfo" id="pageInfo"></span>
           <select id="pageSel"></select>
           <button onclick="startRun(false)">总结选中的P</button>
           <button class="alt" onclick="startRun(true)">总结全部P</button>
+        </div>
+
+        <div class="picker" id="colPicker" style="flex-direction:column;align-items:stretch">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <span class="pinfo" id="colInfo"></span>
+            <span style="display:flex;gap:8px">
+              <button class="alt" style="border:none;border-radius:9px;padding:8px 18px;font-size:13px;font-weight:500;color:var(--sub);background:var(--card);border:1.5px solid var(--line);cursor:pointer;font-family:inherit" onclick="colSelectAll()">全选 / 反选</button>
+              <button onclick="startBatchFromPicker()">批量总结选中项</button>
+              <button class="alt" style="border:none;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:500;color:var(--sub);background:var(--card);border:1.5px solid var(--line);cursor:pointer;font-family:inherit" onclick="colPicker.style.display='none';$('url').value=''">收起</button>
+            </span>
+          </div>
+          <div id="colList" style="max-height:300px;overflow:auto;display:flex;flex-direction:column;gap:6px"></div>
         </div>
 
         <div class="prog" id="progressCard">
@@ -182,7 +217,15 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
           <div class="acts">
             <button onclick="copyResult()">复制 Markdown</button>
             <button onclick="downloadResult()">下载 .md</button>
+            <button onclick="exportOPML()">导图 .opml</button>
+            <button id="cardBtn" onclick="makeFlashcards()">闪卡 .txt</button>
           </div>
+        </div>
+        <div id="dmWrap" style="display:none;margin-top:14px">
+          <div style="font-size:12px;color:var(--sub);display:flex;justify-content:space-between">
+            <span>弹幕高能时间轴 <span id="dmTotal"></span></span><span id="dmHot" style="color:#c2620a"></span>
+          </div>
+          <div id="dmStrip" style="display:flex;gap:1px;height:26px;margin-top:6px;border-radius:6px;overflow:hidden;cursor:pointer" title="点击色块跳转到对应时间点"></div>
         </div>
         <div class="md" id="mdBody"></div>
       </div>
@@ -210,6 +253,46 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
     </aside>
   </div>
 </div>
+
+<dialog id="actDlg">
+  <h3 id="actTitle">激活拾光</h3>
+  <div class="frow"><label>本机机器码（发私信给作者可获取激活码）</label>
+    <div style="display:flex;gap:8px">
+      <input id="actMc" readonly style="flex:1;font-family:Consolas,monospace;letter-spacing:.08em;background:var(--hover)">
+      <button type="button" onclick="copyMc()" style="flex-shrink:0;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:6px 16px;font-size:12.5px;color:var(--sub);cursor:pointer;font-family:inherit">复制</button>
+    </div></div>
+  <div class="frow"><label>激活码（赞助后作者回复给你）</label>
+    <input id="actCode" placeholder="XXXXX-XXXXX-XXXXX-XXXXX" style="font-family:Consolas,monospace;letter-spacing:.05em"
+           onkeydown="if(event.key==='Enter')doActivate('code')"></div>
+  <div id="actOnlineRow" style="display:none">
+    <div style="border-top:1px solid var(--line);margin:20px 0 14px"></div>
+    <div class="frow"><label>或：赞助订单号在线验证（秒开）</label>
+      <input id="actOrder" placeholder="爱发电 → 头像菜单 → 我的订单"
+             onkeydown="if(event.key==='Enter')doActivate('order')"></div>
+  </div>
+  <div id="actMsg" style="min-height:20px;font-size:13px;margin-top:6px"></div>
+  <div class="dlg-foot">
+    <button onclick="actDlg.close()">关闭</button>
+    <button class="pri" id="actBtn" onclick="doActivate('code')">激 活</button>
+  </div>
+  <div class="note" style="margin-top:18px">赞助 ¥9.9/月起 · <a href="https://afdian.com/a/Orisyan" target="_blank" style="color:#c2620a">爱发电主页</a> · 免费试用 3 次</div>
+</dialog>
+
+<dialog id="feedDlg">
+  <h3>追更 · UP主新视频检查</h3>
+  <div class="frow"><label>UP主主页链接或 uid（每行一个，保存在本机）</label>
+    <textarea id="feedUps" rows="3" style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:13.5px;color:var(--ink);outline:none;font-family:inherit;resize:vertical" placeholder="https://space.bilibili.com/12345&#10;67890"></textarea></div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <button class="pri" style="border:none;border-radius:10px;padding:8px 18px;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:inherit" onclick="checkFeed()">检查近14天更新</button>
+    <span id="feedMsg" style="font-size:12.5px;color:var(--sub)"></span>
+  </div>
+  <div id="feedList" style="margin-top:14px;max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:6px"></div>
+  <div class="dlg-foot">
+    <button onclick="feedDlg.close()">关闭</button>
+    <button class="pri" id="feedBatchBtn" style="display:none" onclick="startBatchFromFeed()">批量总结选中项</button>
+  </div>
+  <div class="note" style="margin-top:14px">提示：追更检查需要登录态，请先在「设置」中填入 B站 SESSDATA。</div>
+</dialog>
 
 <dialog id="settingsDlg">
   <h3>设置</h3>
@@ -258,6 +341,17 @@ function applyPreset(){
 
 /* ---------- mini markdown ---------- */
 function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function tsToSec(ts){const p=ts.split(":").map(Number);return p.length===3?p[0]*3600+p[1]*60+p[2]:p[0]*60+p[1]}
+function tsLinkify(html){
+  // 当前是B站视频时，把 [mm:ss] / [h:mm:ss] 变成可点击跳转链接
+  if(!window.curVideo||!window.curVideo.bvid)return html;
+  return html.replace(/\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g,(m,ts)=>{
+    const v=window.curVideo;
+    const t=tsToSec(ts);
+    const href=`https://www.bilibili.com/video/${v.bvid}?p=${v.page||1}&t=${t}`;
+    return `<a href="${href}" target="_blank" title="在B站打开 ${ts}" style="border-bottom:none;font-family:Consolas,monospace;font-size:.92em">[${ts}]</a>`;
+  });
+}
 function inline(s){return s
   .replace(/`([^`]+)`/g,"<code>$1</code>")
   .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
@@ -282,42 +376,172 @@ function mdRender(src){
     out.push(`<p>${inline(l)}</p>`);
   }
   closeList();
-  return out.join("\n");
+  return tsLinkify(out.join("\n"));
 }
 
 async function api(path,opts){
   const r=await fetch(path,opts);
-  if(!r.ok){let msg="请求失败 "+r.status;try{msg=(await r.json()).detail||msg}catch(e){}throw new Error(msg)}
+  if(!r.ok){let msg="请求失败 "+r.status;try{msg=(await r.json()).detail||msg}catch(e){}
+    if(r.status===402)openActivate(msg);  // 未激活/试用用尽 → 弹出页内激活窗
+    throw new Error(msg)}
   return r.json();
 }
 
-let pickedUrl="";
+/* ---------- 授权状态（开源版无此接口时自动隐藏） ---------- */
+let proState=null;
+async function loadPro(){
+  try{
+    const r=await fetch("/api/pro/status");
+    if(!r.ok)return;
+    proState=await r.json();
+  }catch(e){return}
+  const chip=$("proChip");
+  chip.style.display="";
+  chip.classList.remove("warn","ok");
+  if(proState.state==="licensed"){
+    chip.textContent="已激活 · "+(proState.expiry||"");
+    chip.classList.add("ok");
+  }else if(proState.state==="trial"){
+    chip.textContent="试用 · 剩 "+(proState.uses_left??0)+" 次";
+  }else{
+    chip.textContent="未激活 · 点此激活";
+    chip.classList.add("warn");
+  }
+}
+function openActivate(errMsg){
+  if(!proState)return;               // 开源版：无授权体系，不弹
+  $("actMc").value=proState.machine_code||"";
+  if(proState.online)$("actOnlineRow").style.display="block";
+  const m=$("actMsg");
+  m.textContent=errMsg?errMsg:"";
+  m.style.color=errMsg?"var(--err)":"var(--sub)";
+  if(proState.state==="licensed"){$("actTitle").textContent="授权信息";$("actBtn").style.display="none"}
+  else{$("actTitle").textContent="激活拾光";$("actBtn").style.display=""}
+  actDlg.showModal();
+}
+function copyMc(){
+  const v=$("actMc").value;
+  if(v)navigator.clipboard.writeText(v).then(()=>{event.target.textContent="已复制";setTimeout(()=>event.target.textContent="复制",1200)});
+}
+async function doActivate(kind){
+  const m=$("actMsg");
+  const val=(kind==="order"?$("actOrder").value:$("actCode").value).trim();
+  if(!val){m.textContent=kind==="order"?"请输入赞助订单号":"请输入激活码";m.style.color="var(--err)";return}
+  m.textContent="正在激活…";m.style.color="var(--sub)";
+  try{
+    const ep=kind==="order"?"/api/pro/activate-afdian":"/api/pro/activate-code";
+    const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({value:val})});
+    const d=await r.json();
+    if(d.ok){m.textContent="激活成功！有效期至 "+d.expiry;m.style.color="#15803d";
+      setTimeout(()=>{actDlg.close();loadPro()},900)}
+    else{m.textContent=d.error||"激活失败";m.style.color="var(--err)"}
+  }catch(e){m.textContent="网络错误："+e.message; m.style.color="var(--err)"}
+}
+
+let pickedUrl="",lastParse=null;
+window.curVideo=null;
 async function start(){
   const url=$("url").value.trim();
   if(!url)return showErr("请先粘贴B站视频链接");
   showErr("");
   try{
     const info=await api("/api/parse",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
-    pickedUrl=url;
-    const ps=info.pages||[];
-    if(ps.length>1){
-      $("pageInfo").textContent=`「${info.title.slice(0,26)}」共 ${ps.length} 个分P`;
-      $("pageSel").innerHTML=ps.map(p=>`<option value="${p.page}">P${p.page} ${esc((p.part||"").slice(0,28))}</option>`).join("");
-      $("pagePicker").style.display="flex";
+    // 收藏夹 / 合集直达链接 → 批量选择器
+    if(info.collection){
+      showColPicker(info.collection.items,info.collection.title);
       return;
     }
-    await startRun(false);
+    lastParse=info;window.curVideo={bvid:info.bvid,page:1};
+    pickedUrl=url;
+    const ps=info.pages||[];
+    const pk=$("pagePicker");
+    pk.style.display="none";
+    let pkText="";
+    if(ps.length>1){
+      pkText=`「${info.title.slice(0,26)}」共 ${ps.length} 个分P`;
+      $("pageSel").innerHTML=ps.map(p=>`<option value="${p.page}">P${p.page} ${esc((p.part||"").slice(0,28))}</option>`).join("");
+    }
+    const old=pk.querySelector(".seasonBatch");if(old)old.remove();
+    if(info.season&&info.season.videos&&info.season.videos.length>1){
+      pkText+=(pkText?" · ":"")+`属合集「${esc((info.season.title||"").slice(0,16))}」`;
+      const b=document.createElement("button");
+      b.className="alt seasonBatch";
+      b.textContent=`批量总结整个合集(${info.season.count}支)`;
+      b.onclick=()=>showColPicker(info.season.videos,info.season.title);
+      pk.appendChild(b);
+    }
+    if(pkText){
+      $("pageInfo").textContent=pkText;
+      pk.style.display="flex";
+      if(ps.length===1)await startRun(false);
+    }else{
+      await startRun(false);
+    }
   }catch(e){showErr(e.message)}
+}
+function showColPicker(items,title){
+  $("colInfo").textContent=`${title||""} 共 ${items.length} 项 · 已选 0 项（约需 ${Math.ceil(items.length*0.8)} 分钟）`;
+  $("colList").innerHTML=items.map((v,i)=>`
+    <label style="display:flex;gap:9px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;cursor:pointer">
+      <input type="checkbox" data-i="${i}" checked onchange="colCount(${items.length})">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.title||v.bvid)}</span>
+      ${v.duration?`<span style="color:var(--sub);font-size:11.5px;flex-shrink:0">${typeof v.duration==="number"?fmtDur(v.duration):esc(v.duration)}</span>`:""}
+    </label>`).join("");
+  window.colItems=items;
+  colCount(items.length);
+  $("colPicker").style.display="flex";
+  $("pagePicker").style.display="none";
+}
+function colCount(n){const c=[...$("colList").querySelectorAll("input:checked")].length;$("colInfo").textContent=$("colInfo").textContent.replace(/共 \d+ 项 · 已选 \d+ 项.*$/,`共 ${n} 项 · 已选 ${c} 项`)}
+function colSelectAll(){$("colList").querySelectorAll("input").forEach(c=>c.checked=!c.checked);colCount(window.colItems.length)}
+function fmtDur(s){s=Math.round(s);const h=~~(s/3600),m=~~(s%3600/60),x=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(x).padStart(2,"0")}`:`${m}:${String(x).padStart(2,"0")}`}
+async function startBatchFromPicker(){
+  const sel=[...$("colList").querySelectorAll("input:checked")].map(c=>window.colItems[+c.dataset.i]);
+  if(!sel.length)return showErr("请至少勾选一项");
+  $("colPicker").style.display="none";
+  await runBatch(sel);
+}
+async function runBatch(items){
+  try{
+    const d=await api("/api/start_batch",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({items:items.map(v=>({bvid:v.bvid,title:v.title})),style:$("styleSel").value})});
+    window.curVideo=null;
+    currentTask=d.task_id;
+    $("resultCard").style.display="none";$("startBtn").disabled=true;
+    setProgress({stage:"queue",percent:0,message:`批量 ${items.length} 支视频 · 排队中…`});
+    pollTimer=setInterval(poll,800);
+  }catch(e){showErr(e.message)}
+}
+async function uploadFile(file){
+  showErr("");
+  const fd=new FormData();
+  fd.append("file",file);
+  fd.append("style",$("styleSel").value);
+  $("resultCard").style.display="none";$("startBtn").disabled=true;
+  window.curVideo=null;
+  setProgress({stage:"omni",percent:3,message:`上传「${file.name}」中…`});
+  try{
+    const r=await fetch("/api/start_file",{method:"POST",body:fd});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||("上传失败 "+r.status));
+    currentTask=d.task_id;
+    pollTimer=setInterval(poll,800);
+  }catch(e){
+    $("startBtn").disabled=false;$("progressCard").style.display="none";
+    showErr(e.message);
+  }
 }
 async function startRun(allPages){
   if(!pickedUrl)return;
   $("pagePicker").style.display="none";
   try{
-    const body={url:pickedUrl};
+    const body={url:pickedUrl,style:$("styleSel").value};
     if(!allPages)body.page=parseInt($("pageSel").value)||1;
     body.all_pages=!!allPages;
     const d=await api("/api/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     currentTask=d.task_id;
+    if(body.page)window.curVideo={bvid:lastParse.bvid,page:body.page};
+    loadPro();  // 试用消耗后刷新徽标
     $("resultCard").style.display="none";
     $("startBtn").disabled=true;
     setProgress({stage:"queue",percent:0,message:"排队中…"});
@@ -361,6 +585,93 @@ function showResult(res){
   $("askRow").style.display="flex";
   window.scrollTo({top:0,behavior:"smooth"});
   loadHistory();
+  loadDanmaku(res);
+}
+
+/* ---------- 弹幕高能时间轴 ---------- */
+async function loadDanmaku(res){
+  const w=$("dmWrap");
+  if(!res||!res.bvid){w.style.display="none";return}
+  try{
+    const d=await api(`/api/danmaku?bvid=${res.bvid}&cid=${res.cid||0}&duration=${res.duration_sec||0}`);
+    if(!d.ok){w.style.display="none";return}
+    w.style.display="block";
+    $("dmTotal").textContent=`· 共 ${d.total} 条弹幕`;
+    const mx=Math.max(...d.bins,1);
+    $("dmStrip").innerHTML=d.bins.map((c,i)=>{
+      const a=c/mx;
+      return `<div style="flex:1;background:rgba(249,115,22,${(0.08+0.92*a).toFixed(2)})" title="${fmtDur(i*d.duration/d.bins.length)} · ${c}条" onclick="window.open('https://www.bilibili.com/video/${res.bvid}?t=${Math.round(i*d.duration/d.bins.length)}')"></div>`;
+    }).join("");
+    $("dmHot").textContent="高能："+d.hot.slice(0,3).map(h=>`${fmtDur(h.t)}(${h.count})`).join(" · ");
+  }catch(e){w.style.display="none"}
+}
+
+/* ---------- 导出：思维导图 OPML / Anki 闪卡 ---------- */
+function exportOPML(){
+  if(!lastResult)return alert("请先生成总结");
+  const lines=lastResult.split(/\r?\n/);const nodes=[];const stack=[];
+  let body="";
+  for(const ln of lines){
+    const m=ln.match(/^(#{1,4})\s+(.*)$/);
+    if(!m)continue;
+    const lv=m[1].length,t=esc(m[2].replace(/[*`]/g,"").slice(0,60));
+    body+="  ".repeat(lv)+`<outline text="${t}"/>\n`;
+  }
+  const opml=`<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>${esc($("resultTitle").textContent)}</title></head><body>\n${body}</body></opml>`;
+  const blob=new Blob([opml],{type:"text/x-opml;charset=utf-8"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download=(lastFileName||"seeglow").replace(/\.md$/,"")+".opml";a.click();
+  URL.revokeObjectURL(a.href);
+}
+async function makeFlashcards(){
+  if(!lastFileName)return alert("请先生成总结");
+  const btn=$("cardBtn");btn.disabled=true;btn.textContent="生成中…";
+  try{
+    const d=await api("/api/flashcards",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({file:lastFileName,count:10})});
+    const tsv=d.cards.map(c=>`${c.q.replace(/\t|\n/g," ")}\t${c.a.replace(/\t|\n/g," ")}`).join("\n");
+    const blob=new Blob(["\ufeff"+tsv],{type:"text/plain;charset=utf-8"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+    a.download=(lastFileName||"seeglow").replace(/\.md$/,"")+"-闪卡.txt";a.click();
+    URL.revokeObjectURL(a.href);
+    alert(`已生成 ${d.cards.length} 张闪卡：文件可直接导入 Anki（分隔符为制表符）`);
+  }catch(e){alert("闪卡生成失败："+e.message)}
+  btn.disabled=false;btn.textContent="闪卡 .txt";
+}
+
+/* ---------- 追更 ---------- */
+function openFeed(){
+  feedDlg.showModal();
+  $("feedUps").value=localStorage.getItem("feedUps")||"";
+}
+async function checkFeed(){
+  const ups=$("feedUps").value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  localStorage.setItem("feedUps",ups.join("\n"));
+  if(!ups.length){$("feedMsg").textContent="请先填写UP主";return}
+  $("feedMsg").textContent="检查中…";$("feedList").innerHTML="";$("feedBatchBtn").style.display="none";
+  try{
+    const d=await api("/api/feed_check",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ups,days:14})});
+    $("feedMsg").textContent=`近14天 ${d.videos.length} 支新视频`;
+    if(d.need_sessdata)$("feedMsg").textContent+=" ·（部分失败：需要 SESSDATA）";
+    if(!d.videos.length){$("feedList").innerHTML='<div class="empty">暂无更新</div>';return}
+    $("feedList").innerHTML=d.videos.map((v,i)=>`
+      <label style="display:flex;gap:9px;align-items:center;background:var(--hover);border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;cursor:pointer">
+        <input type="checkbox" data-i="${i}" checked>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.title)}</span>
+        <span style="color:var(--sub);font-size:11.5px;flex-shrink:0">${new Date(v.created*1000).toLocaleDateString()}</span>
+      </label>`).join("");
+    window.feedVideos=d.videos;
+    $("feedBatchBtn").style.display="";
+    $("feedBatchBtn").textContent=`批量总结选中项（${d.videos.length}）`;
+  }catch(e){$("feedMsg").textContent="失败："+e.message}
+}
+async function startBatchFromFeed(){
+  const sel=[...$("feedList").querySelectorAll("input:checked")].map(c=>window.feedVideos[+c.dataset.i]);
+  if(!sel.length)return;
+  feedDlg.close();
+  $("url").value="";
+  await runBatch(sel);
 }
 
 function showErr(msg){
@@ -415,10 +726,18 @@ async function viewFile(enc){
     const d=await api("/api/output?name="+enc);
     lastResult=d.content;lastFileName=d.name;
     qaHistory=[];qaFile=d.name;$("qaMsgs").innerHTML="";$("qaCard").style.display="block";
+    // 从 ctx 记录的视频链接恢复时间戳跳转与弹幕条
+    let bvid="",page=1;
+    const m=(d.video_url||"").match(/video\/(BV[0-9A-Za-z]{10})/);
+    if(m)bvid=m[1];
+    const pm=(d.video_url||"").match(/[?&]p=(\d+)/);
+    if(pm)page=+pm[1];
+    window.curVideo=bvid?{bvid,page}:null;
     $("resultTitle").textContent=d.name.replace(/\.md$/,"").replace(/^\d{8}-/,"");
     $("mdBody").innerHTML=mdRender(d.content);
     $("resultCard").style.display="block";
     window.scrollTo({top:0,behavior:"smooth"});
+    loadDanmaku(bvid?{bvid,cid:0,duration_sec:0}:null);
   }catch(e){showErr(e.message)}
 }
 
@@ -451,7 +770,26 @@ async function saveSettings(){
   }catch(e){alert("保存失败："+e.message)}
 }
 
+/* ---------- 本地文件拖拽 ---------- */
+const askCard=document.querySelector(".ask-card");
+askCard.addEventListener("dragover",e=>{e.preventDefault();askCard.style.borderColor="var(--accent)";askCard.style.background="#fffdf8"});
+askCard.addEventListener("dragleave",()=>{askCard.style.borderColor="";askCard.style.background=""});
+askCard.addEventListener("drop",e=>{
+  e.preventDefault();askCard.style.borderColor="";askCard.style.background="";
+  const f=e.dataTransfer.files[0];
+  if(f)uploadFile(f);
+});
+
+/* ---------- 插件/外链唤起：?url= 预填并自动开始 ---------- */
+(function(){
+  const qp=new URLSearchParams(location.search);
+  const q=qp.get("url");
+  if(q){$("url").value=q;setTimeout(start,300)}
+})();
+
 loadHistory();
+loadPro();
+$("feedChip").style.display="";
 </script>
 </body>
 </html>
