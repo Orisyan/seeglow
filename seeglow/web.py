@@ -327,6 +327,47 @@ class CardsReq(BaseModel):
     count: Optional[int] = 10
 
 
+class SaveExportReq(BaseModel):
+    name: str            # 默认文件名（含扩展名）
+    content: str         # 文件内容（文本）
+    title: Optional[str] = ""  # 对话框标题
+
+
+def _native_save_dialog(default_name: str, title: str = "保存文件"):
+    """系统「另存为」对话框，返回用户选择的路径；取消返回 None。"""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        try:
+            path = filedialog.asksaveasfilename(
+                title=title, initialfile=default_name, confirmoverwrite=True,
+                parent=root,
+            )
+        finally:
+            root.destroy()
+        return path or None
+    except Exception:
+        return None
+
+
+@app.post("/api/save_export")
+def save_export(req: SaveExportReq):
+    """桌面版导出：弹系统保存对话框直接写盘（绕开 WebView 的下载限制）。"""
+    name = (req.name or "seeglow.txt").strip() or "seeglow.txt"
+    path = _native_save_dialog(name, req.title or "保存文件")
+    if not path:
+        return {"ok": False, "cancelled": True}
+    try:
+        Path(path).write_text(req.content, encoding="utf-8")
+    except OSError as e:
+        raise HTTPException(500, f"写入失败：{e}")
+    return {"ok": True, "path": path}
+
+
 @app.post("/api/flashcards")
 def flashcards(req: CardsReq):
     """从已保存的视频笔记生成 Anki 闪卡（Q&A 对）。"""
