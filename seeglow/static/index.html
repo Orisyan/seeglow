@@ -130,6 +130,30 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 .qrow input:focus{border-color:var(--accent)}
 .qrow button{border:none;border-radius:10px;padding:0 20px;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:inherit}
 .note{margin-top:26px;font-size:12.5px;color:#a1a1aa;line-height:2}
+
+/* ---------- 速学模式 ---------- */
+.mindmap-box{background:var(--hover);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:10px 0}
+.mm-head{font-size:12px;color:var(--sub);margin-bottom:8px}
+.mm-tree,.mm-tree ul{list-style:none;padding-left:0;margin:0}
+.mm-tree li{position:relative;padding:3px 0 3px 22px;font-size:13.5px}
+.mm-tree li::before{content:"";position:absolute;left:8px;top:0;bottom:0;width:1px;background:var(--line)}
+.mm-tree li:last-child::before{bottom:auto;height:14px}
+.mm-tree li>span.mm-tg{position:absolute;left:0;top:5px;width:15px;height:15px;line-height:13px;text-align:center;
+  border:1px solid var(--line2);border-radius:4px;background:#fff;color:var(--sub);cursor:pointer;font-size:11px;user-select:none}
+.mm-tree li>span.mm-tg:hover{color:var(--ink);border-color:var(--accent)}
+.quiz-q{cursor:pointer;border-radius:8px;padding:4px 8px;margin-left:-8px}
+.quiz-q:hover{background:var(--hover)}
+.quiz-q blockquote.ans{margin-top:6px}
+.qa-tip{font-size:12px;color:var(--sub);margin:6px 0}
+@media print{
+  header,.ask-card,.err,.qa,.note,aside,.acts,.btn-chip,#dmWrap,.qa-tip,.mm-head{display:none!important}
+  body{background:#fff}
+  .wrap{max-width:100%;padding:0}
+  .card{border:none;box-shadow:none;padding:0}
+  .result{display:block!important;border-top:none;padding-top:0}
+  .quiz-q blockquote.ans{display:block!important}
+  h2{page-break-after:avoid}
+}
 </style>
 </head>
 <body>
@@ -170,7 +194,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
           <span style="display:flex;gap:8px;align-items:center">
             <select id="styleSel" style="background:var(--hover);border:1.5px solid var(--line);border-radius:8px;padding:4px 8px;font-size:12.5px;color:var(--sub);font-family:inherit;outline:none;cursor:pointer">
               <option value="general">通用笔记</option>
-              <option value="speed">⚡ 速学模式</option>
+              <option value="speed">⚡ 速学模式（期末速成）</option>
               <option value="study">学习笔记</option>
               <option value="tutorial">教程步骤</option>
               <option value="meeting">会议纪要</option>
@@ -222,6 +246,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
             <button id="cardBtn" onclick="makeFlashcards()">闪卡 .txt</button>
             <button onclick="openRewrite()">✍️ 改写文案</button>
             <button id="srtBtn" onclick="exportSRT()" title="仅B站有字幕的视频可导">字幕 .srt</button>
+            <button onclick="window.print()" title="打印或另存为 PDF">🖨 打印/PDF</button>
           </div>
         </div>
         <div id="dmWrap" style="display:none;margin-top:14px">
@@ -380,19 +405,39 @@ function inline(s){return s
   .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
   .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>')}
 function mdRender(src){
-  const lines=esc(src).split(/\r?\n/);const out=[];let inList=false,inCode=false,ol=false;
-  const closeList=()=>{if(inList){out.push("</ul>");inList=false;ol=false}};
+  const lines=esc(src).split(/\r?\n/);const out=[];
+  let inCode=false;
+  let listStack=[];
+  let liOpen=false;
+  const curInd=()=>listStack[listStack.length-1];
+  const closeLi=()=>{if(liOpen){out.push("</li>");liOpen=false}};
+  const closeList=()=>{
+    while(listStack.length){
+      closeLi();
+      out.push("</ul>");
+      listStack.pop();
+    }
+  };
   for(const raw of lines){
     const l=raw;
-    if(/^```/.test(l.trim())){inCode=!inCode;closeList();out.push(inCode?"<pre><code>":"</code></pre>");continue}
+    if(/^```/.test(l.trim())){
+      inCode=!inCode;closeList();
+      out.push(inCode?"<pre><code>":"</code></pre>");continue}
     if(inCode){out.push(l+"\n");continue}
     if(/^\s*$/.test(l)){closeList();continue}
     let m=l.match(/^\s*(#{1,4})\s+(.*)$/);
     if(m){closeList();const lv=m[1].length;out.push(`<h${lv}>${inline(m[2])}</h${lv}>`);continue}
-    m=l.match(/^\s*\d+\.\s+(.*)$/);
-    if(m){if(!inList||!ol){closeList();out.push('<ul>');inList=true;ol=true}out.push(`<li>${inline(m[1])}</li>`);continue}
-    m=l.match(/^\s*[-*]\s+(.*)$/);
-    if(m){if(!inList){out.push("<ul>");inList=true}out.push(`<li>${inline(m[1])}</li>`);continue}
+    m=l.match(/^(\s*)(?:[-*]|\d+\.)\s+(.*)$/);
+    if(m){
+      const ind=Math.floor(m[1].length/2);
+      while(listStack.length&&ind<curInd()){closeLi();out.push("</ul>");listStack.pop()}
+      if(!listStack.length||ind>curInd()){out.push("<ul>");listStack.push(ind)}
+      closeLi();
+      liOpen=true;
+      out.push(`<li>${inline(m[2])}`);
+      continue}
+    if(/^&gt;\s?/.test(l)&&liOpen){
+      out.push(`<blockquote class="ans">${inline(l.replace(/^&gt;\s?/,""))}</blockquote>`);continue}
     if(/^&gt;\s?/.test(l)){closeList();out.push(`<blockquote>${inline(l.slice(4))}</blockquote>`);continue}
     if(/^---+$/.test(l.trim())){closeList();out.push("<hr>");continue}
     closeList();
@@ -604,11 +649,84 @@ function showResult(res){
   qaHistory=[];qaFile="";$("qaMsgs").innerHTML="";$("qaCard").style.display="block";
   $("resultTitle").textContent=res.title;
   $("mdBody").innerHTML=mdRender(lastResult);
+  enhanceStudyPack();
   $("resultCard").style.display="block";
   $("askRow").style.display="flex";
   window.scrollTo({top:0,behavior:"smooth"});
   loadHistory();
   loadDanmaku(res);
+}
+
+/* ---------- 速学模式增强：交互导图 / 自测翻牌 ---------- */
+function enhanceStudyPack(){
+  const body=$("mdBody");
+  const h2s=[...body.querySelectorAll("h2")];
+  const find=kw=>h2s.find(h=>h.textContent.includes(kw));
+
+  const mm=find("思维导图");
+  if(mm){
+    let el=mm.nextElementSibling,srcUl=null;
+    while(el&&el.tagName!=="H2"){if(el.tagName==="UL"){srcUl=el;break}el=el.nextElementSibling}
+    if(srcUl){
+      const tree=srcUl.cloneNode(true);
+      tree.classList.add("mm-tree");
+      tree.querySelectorAll("li").forEach(li=>{
+        const sub=li.querySelector(":scope > ul");
+        if(sub){
+          const tg=document.createElement("span");
+          tg.className="mm-tg";tg.textContent="−";
+          tg.onclick=e=>{e.stopPropagation();
+            const open=sub.style.display!=="none";
+            sub.style.display=open?"none":"";
+            tg.textContent=open?"+":"−";};
+          li.prepend(tg);
+        }
+      });
+      const wrap=document.createElement("div");
+      wrap.className="mindmap-box";
+      const cnt=tree.querySelectorAll("li").length;
+      wrap.innerHTML=`<div class="mm-head">共 ${cnt} 个节点 · 点 − / + 折叠展开</div>`;
+      wrap.appendChild(tree);
+      srcUl.style.display="none";
+      mm.after(wrap);
+    }
+  }
+
+  const quiz=find("自测");
+  if(quiz){
+    let el=quiz.nextElementSibling;
+    while(el&&el.tagName!=="H2"){
+      if(el.tagName==="UL"){
+        el.querySelectorAll("li").forEach(li=>{
+          const bq=li.querySelector("blockquote.ans")||li.querySelector("blockquote");
+          if(bq){
+            bq.style.display="none";
+            li.classList.add("quiz-q");
+            li.title="点击显示答案";
+            li.addEventListener("click",()=>{
+              bq.style.display=bq.style.display==="none"?"block":"none";
+            });
+          }
+        });
+      }
+      el=el.nextElementSibling;
+    }
+    const tip=document.createElement("div");
+    tip.className="qa-tip";
+    tip.textContent="点击题目查看答案（先自测，再对照）";
+    quiz.after(tip);
+  }
+
+  const marks={"必会知识点":"#dc2626","高频考点":"#c2620a","易错点":"#b45309",
+               "记忆锚点":"#7c3aed","术语表":"#0891b2","思维导图":"#0f766e"};
+  h2s.forEach(h=>{
+    for(const k in marks){
+      if(h.textContent.includes(k)){
+        h.style.borderLeft=`4px solid ${marks[k]}`;
+        h.style.paddingLeft="10px";
+      }
+    }
+  });
 }
 
 /* ---------- 弹幕高能时间轴 ---------- */
@@ -657,11 +775,23 @@ function downloadBlob(text, mime, name, withBom) {
 }
 async function exportOPML(){
   if(!lastResult)return alert("请先生成总结");
-  // 解析标题为层级树（## 一句话总结 → ### 子节 …）
+  // 解析标题为层级树；速学模式下把「思维导图」缩进列表并入树结构
   const heads=[];
+  let inMap=false;
   for(const ln of lastResult.split(/\r?\n/)){
-    const m=ln.match(/^(#{1,4})\s+(.+)$/);
-    if(m)heads.push({lv:m[1].length,t:m[2].replace(/[*`]/g,"").slice(0,60)});
+    const hm=ln.match(/^(#{1,4})\s+(.*)$/);
+    if(hm){
+      inMap=hm[2].includes("思维导图");
+      heads.push({lv:hm[1].length,t:hm[2].replace(/[*`]/g,"").slice(0,60)});
+      continue;
+    }
+    if(inMap){
+      const m=ln.match(/^(\s*)[-*]\s+(.+)$/);
+      if(m){
+        const depth=Math.floor(m[1].length/2);
+        heads.push({lv:3+depth,t:m[2].replace(/[*`]/g,"").slice(0,60)});
+      }
+    }
   }
   if(!heads.length)return alert("笔记中没有标题，无法生成导图");
   const q=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
