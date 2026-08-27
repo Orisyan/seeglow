@@ -846,12 +846,12 @@ def update_config(req: ConfigReq):
 
 class SiteOrderReq(BaseModel):
     order_no: str
-    device: str
+    device: str = ""   # 兼容保留；票据已不绑设备
 
 
 class SiteCodeReq(BaseModel):
     code: str
-    device: str
+    device: str = ""
 
 
 @app.post("/api/pro/order")
@@ -863,7 +863,6 @@ def site_order(req: SiteOrderReq):
 
     if not req.order_no.strip():
         raise HTTPException(400, "请输入赞助订单号")
-    dev = pro_web.normalize_device(req.device)
     # 简单防爆破：全局每分钟最多 10 次订单验证
     now = time.time()
     hits = [t for t in getattr(site_order, "_hits", []) if now - t < 60]
@@ -879,11 +878,6 @@ def site_order(req: SiteOrderReq):
         return {"ok": False, "error": f"该订单金额（¥{amount:.2f}）未达到 ¥{pro_web.PLAN_PRICE:g}/月 档位门槛"}
     months = max(int(o.get("month") or 1), 1)
     expiry = (datetime.now() + timedelta(days=pro_web.PLAN_DAYS * months)).strftime("%Y-%m-%d")
-    bound = pro_web._bound_devices("bind:" + req.order_no.strip())
-    if dev not in bound:
-        if len(bound) >= pro_web.MAX_MACHINES:
-            return {"ok": False, "error": "该订阅已绑定 3 台设备上限，如需更换设备请联系作者"}
-        pro_web._remember_device("bind:" + req.order_no.strip(), dev)
     uid = req.order_no.strip()
     ticket = pro_web.make_ticket(uid, expiry, "afdian")
     return {"ok": True, **ticket}
@@ -891,16 +885,26 @@ def site_order(req: SiteOrderReq):
 
 @app.post("/api/pro/code")
 def site_code(req: SiteCodeReq):
-    """作者签发的激活码激活（无需爱发电赞助）。"""
+    """作者签发的激活码激活（无需爱发电赞助）。不绑定设备：一码多设备通用。"""
     if not SITE_PAID_MODE:
         raise HTTPException(404, "未启用付费模式")
     from . import pro_web
 
+    # 限频防穷举：全局每分钟最多 N 次激活码校验
+    now = time.time()
+    hits = [t for t in getattr(site_code, "_hits", []) if now - t < 60]
+    if len(hits) >= pro_web._CODE_ACTIVATE_RATE:
+        raise HTTPException(429, "尝试过于频繁，请稍后再试")
+    site_code._hits = hits + [now]
+
     try:
-        expiry = pro_web.parse_web_code(req.code, pro_web.normalize_device(req.device))
+        expiry, serial = pro_web.parse_web_code(req.code)
     except HTTPException as e:
         return {"ok": False, "error": e.detail}
-    ticket = pro_web.make_ticket("WEB-" + pro_web.normalize_device(req.device)[:12].upper(), expiry, "code")
+    if pro_web.is_code_revoked(serial):
+        return {"ok": False, "error": "该激活码已作废，请联系作者"}
+    # 同一张码在多台设备各自持票；票据不绑设备、可随意复制保存
+    ticket = pro_web.make_ticket("CODE-" + serial.upper(), expiry, "code")
     return {"ok": True, **ticket}
 
 
