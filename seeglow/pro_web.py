@@ -29,7 +29,6 @@ from pydantic import BaseModel
 
 PLAN_PRICE = float(os.getenv("SEEGLOW_PLAN_PRICE", "29.9"))   # 月度档实付门槛
 PLAN_DAYS = int(os.getenv("SEEGLOW_PLAN_DAYS", "35"))          # 每月折算天数
-MAX_MACHINES = int(os.getenv("SEEGLOW_MAX_MACHINES", "3"))     # 单授权设备上限
 CODE_PLANS = {"month": PLAN_DAYS, "year": PLAN_DAYS * 12 + 15}
 
 _verify_store = None   # modal.Dict：订单→设备绑定、激活码→绑定、限流
@@ -50,6 +49,7 @@ def get_auth_secret() -> str:
 # ---------------- 机器码（浏览器指纹，前端传字符串即可） ----------------
 
 def normalize_device(fp: str) -> str:
+    """兼容保留：把设备标识转成稳定哈希（票据已不绑设备，仅个别场景用）。"""
     raw = (fp or "").strip().lower()
     if not raw or len(raw) > 300:
         raise HTTPException(400, "设备标识缺失")
@@ -68,8 +68,8 @@ def make_ticket(user_id: str, expiry: str, kind: str) -> dict:
     return {"kind": kind, "uid": user_id, "expiry": expiry, "sig": sign_payload(body)}
 
 
-def verify_ticket(ticket: dict, device_hash: str) -> dict:
-    """校验本地票据。合法返回 {"ok":True,...}，非法抛 HTTPException(401)。"""
+def verify_ticket(ticket: dict) -> dict:
+    """校验本地票据（不绑设备）。合法返回 {"ok":True,...}，非法抛 HTTPException(401)。"""
     if not isinstance(ticket, dict):
         raise HTTPException(401, "无效的授权信息")
     uid = str(ticket.get("uid") or "")
@@ -85,43 +85,31 @@ def verify_ticket(ticket: dict, device_hash: str) -> dict:
         raise HTTPException(401, "授权数据损坏，请重新激活")
     if d < date.today():
         raise HTTPException(402, f"订阅已于 {exp} 到期，请续费后重新验证")
-    if kind == "afdian":
-        recs = _bound_devices("bind:" + uid)
-        if device_hash and device_hash not in recs:
-            if len(recs) >= MAX_MACHINES:
-                raise HTTPException(402, "该订阅已绑定 3 台设备上限，如需更换设备请联系作者")
-            _remember_device("bind:" + uid, device_hash)
-    elif kind == "code":
-        pass  # 设备绑定在激活时一次性完成（codeused:），票据期内换设备直接拒绝
     return {"uid": uid, "expiry": exp, "kind": kind}
 
 
 def _store_get(key: str, default=None):
     if _verify_store is None:
-        return default
+        return _local_store.get(key, default)
     try:
         v = _verify_store.get(key)
         return default if v is None else v
     except Exception:
-        return default
+        return _local_store.get(key, default)
 
 
 def _store_put(key: str, value):
-    if _verify_store is not None:
-        try:
-            _verify_store.put(key, value)
-        except Exception:
-            pass
+    # 无外部 KV（本地测试）时退化为进程内字典，保证撤销名单/限频逻辑可测
+    if _verify_store is None:
+        _local_store[key] = value
+        return
+    try:
+        _verify_store.put(key, value)
+    except Exception:
+        pass
 
 
-def _bound_devices(key: str) -> list:
-    return list(_store_get(key) or [])
-
-
-def _remember_device(key: str, device_hash: str):
-    bound = _bound_devices(key)
-    bound.append(device_hash)
-    _store_put(key, bound)
+_local_store: dict = {}
 
 
 # ---------------- 通道一：爱发电订单在线验证 ----------------
@@ -179,22 +167,41 @@ class CodeReq(BaseModel):
 
 
 # ---------------- 激活码校验（作者离线签发，可不赞助直接激活） ----------------
+# 设计：激活码不绑定设备——同一码可在任意多台设备激活（手机/电脑通吃），
+# 签名只覆盖「到期日+码序号」，服务端仅做限频与撤销名单（modal.Dict）。
 
 _B36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-
-def _code_fingerprint(device_hash: str) -> str:
-    """机器码指纹（掺 SECRET 防直接构造）。"""
-    return hashlib.sha256((get_auth_secret() + device_hash).encode()).hexdigest()[:8]
+# 全局激活限频：每分钟最多 N 次（防穷举签名空间）
+_CODE_ACTIVATE_RATE = 10
 
 
-def _code_sig(expiry: str, fp: str) -> str:
-    return hmac.new(get_auth_secret().encode(), f"webcode|{expiry}|{fp}".encode(),
+def _code_sig(expiry: str, serial: str) -> str:
+    return hmac.new(get_auth_secret().encode(), f"webcode|{expiry}|{serial}".encode(),
                     hashlib.sha256).hexdigest()[:10]
 
 
-def parse_web_code(code: str, device_hash: str) -> str:
-    """校验网站版激活码，合法返回到期日 ISO 字符串，否则抛 HTTPException。"""
+def make_web_code(plan: str = "month") -> str:
+    """生成一张不绑定设备的激活码。
+
+    码结构：base36( 到期日YYYYMMDD + 随机序号8hex + HMAC签名10hex )
+    序号随机生成（不来自机器码），所以同一张码谁拿到都能用、多设备通用；
+    防伪造靠 HMAC；防滥用靠服务端撤销名单 + 限频。
+    """
+    days = CODE_PLANS.get(plan, PLAN_DAYS)
+    expiry = (date.today() + timedelta(days=days)).isoformat()
+    serial = uuid.uuid4().hex[:8]
+    payload = expiry.replace("-", "") + serial + _code_sig(expiry, serial)  # 8+8+10 hex
+    code = ""
+    n = int(payload, 16)
+    while n:
+        n, r = divmod(n, 36)
+        code = _B36[r] + code
+    return "-".join(code[i : i + 5] for i in range(0, len(code), 5))
+
+
+def parse_web_code(code: str) -> tuple[str, str]:
+    """验签激活码。合法返回 (到期日ISO, 序号)，否则抛 HTTPException。"""
     s = re.sub(r"[^0-9A-Za-z]", "", (code or "").strip()).upper()
     if not (18 <= len(s) <= 26):
         raise HTTPException(400, "激活码格式不正确（请完整复制，含连字符）")
@@ -204,23 +211,14 @@ def parse_web_code(code: str, device_hash: str) -> str:
         y, m, d = int(hexstr[0:4]), int(hexstr[4:6]), int(hexstr[6:8])
         expiry = f"{y:04d}-{m:02d}-{d:02d}"
         datetime.strptime(expiry, "%Y-%m-%d")
-        fp, sig = hexstr[8:16], hexstr[16:26]
+        serial, sig = hexstr[8:16], hexstr[16:26]
     except (ValueError, IndexError):
         raise HTTPException(400, "激活码无法识别，请核对后重新粘贴")
-    if not hmac.compare_digest(sig, _code_sig(expiry, fp)):
+    if not hmac.compare_digest(sig, _code_sig(expiry, serial)):
         raise HTTPException(401, "激活码无效（签名校验失败）")
-    if not hmac.compare_digest(fp, _code_fingerprint(device_hash)):
-        raise HTTPException(401, "此激活码绑定在其他设备，请提供本机机器码重新获取")
     if datetime.strptime(expiry, "%Y-%m-%d").date() < date.today():
         raise HTTPException(402, f"激活码已于 {expiry} 过期")
-    # 一码限设备：绑定满 3 台后拒绝新设备（与订阅同策略）
-    uid = "CODE-" + hashlib.sha256(fp.encode()).hexdigest()[:12].upper()
-    used = _bound_devices("codeused:" + uid)
-    if device_hash not in used:
-        if len(used) >= MAX_MACHINES:
-            raise HTTPException(402, "该激活码已绑定 3 台设备上限，如需更换设备请联系作者")
-        _remember_device("codeused:" + uid, device_hash)
-    return expiry
+    return expiry, serial
 
 
 # ---------------- 授权状态存储（浏览器 localStorage 即数据库，服务端只验签） ----------------
@@ -234,23 +232,34 @@ def check_request_auth(request: Request) -> dict | None:
         ticket = json.loads(raw)
     except Exception:
         raise HTTPException(401, "授权信息损坏，请重新激活")
-    device = normalize_device(request.headers.get("x-seeglow-device", ""))
-    info = verify_ticket(ticket, device)
-    return {**info, "device": device}
+    info = verify_ticket(ticket)
+    return info
+
+
+# ---------------- 撤销名单（可选）：把泄露/退款的激活码作废 ----------------
+
+def revoke_code(serial: str):
+    """作废一张激活码（modal.Dict 持久）：不能再激活任何新设备；已激活的票据到期为止。"""
+    _store_put("revoked:" + serial.upper(), True)
+
+
+def is_code_revoked(serial: str) -> bool:
+    return bool(_store_get("revoked:" + serial.upper()))
 
 
 # ---------------- 激活码签发（作者侧） ----------------
 
-def make_web_code(device_fingerprint: str, plan: str = "month") -> str:
-    """为设备标识（前端显示的机器码原文或其哈希）生成网站版激活码。
+def make_web_code(plan: str = "month") -> str:
+    """生成一张不绑定设备的激活码（作者侧工具用）。
 
-    码结构：base36( 到期日YYYYMMDD + 设备指纹8hex + HMAC签名10hex )
+    码结构：base36( 到期日YYYYMMDD + 随机序号8hex + HMAC签名10hex )
+    序号随机，同一张码可在任意多台设备激活；防伪造靠 HMAC，
+    防滥用靠服务端撤销名单（revoke_code）与限频。
     """
     days = CODE_PLANS.get(plan, PLAN_DAYS)
     expiry = (date.today() + timedelta(days=days)).isoformat()
-    dhash = normalize_device(device_fingerprint)
-    fp = _code_fingerprint(dhash)
-    payload = expiry.replace("-", "") + fp + _code_sig(expiry, fp)  # 8+8+10 hex
+    serial = uuid.uuid4().hex[:8]
+    payload = expiry.replace("-", "") + serial + _code_sig(expiry, serial)  # 8+8+10 hex
     code = ""
     n = int(payload, 16)
     while n:
