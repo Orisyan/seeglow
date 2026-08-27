@@ -11,9 +11,9 @@ for f in (r"seeglow\bilibili.py", r"seeglow\summarize.py", r"seeglow\pipeline.py
     ast.parse(open(f, encoding="utf-8").read())
     print("syntax OK:", f)
 
-# HTML 基本完整性（括号配对）
+# HTML 基本完整性（括号配对；对话框数量随版本增加，只验证开闭配对）
 html = open(r"seeglow\static\index.html", encoding="utf-8").read()
-assert html.count("<dialog") == html.count("</dialog>") == 3, (html.count("<dialog"), html.count("</dialog>"))
+assert html.count("<dialog") == html.count("</dialog>") >= 3, (html.count("<dialog"), html.count("</dialog>"))
 for fn in ("showColPicker", "runBatch", "uploadFile", "loadDanmaku", "exportOPML",
            "makeFlashcards", "openFeed", "checkFeed", "tsLinkify", "colSelectAll"):
     assert fn in html, f"缺函数 {fn}"
@@ -22,7 +22,7 @@ print("html functions OK")
 # 2. 风格模板
 from seeglow.summarize import STYLE_GUIDES, style_hint, SINGLE_PROMPT, REDUCE_PROMPT, AUDIO_SINGLE_PROMPT, REDUCE_AUDIO_PROMPT
 
-assert set(STYLE_GUIDES) == {"general", "study", "tutorial", "meeting", "review"}
+assert {"general", "study", "tutorial", "meeting", "review"} <= set(STYLE_GUIDES), set(STYLE_GUIDES)
 assert style_hint("general") == ""
 assert "术语表" in style_hint("study") and "操作步骤" in style_hint("tutorial")
 assert "待办" in style_hint("meeting") and "名场面" in style_hint("review")
