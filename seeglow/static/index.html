@@ -312,14 +312,17 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 
 <dialog id="actDlg">
   <h3 id="actTitle">激活拾光</h3>
-  <div class="frow" id="actMcRow"><label>本机机器码（发私信给作者可获取激活码）</label>
+  <div class="frow" id="actMcRow" style="display:none"><label>本机机器码（发私信给作者可获取激活码）</label>
     <div style="display:flex;gap:8px">
       <input id="actMc" readonly style="flex:1;font-family:Consolas,monospace;letter-spacing:.08em;background:var(--hover)">
       <button type="button" onclick="copyMc()" style="flex-shrink:0;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:6px 16px;font-size:12.5px;color:var(--sub);cursor:pointer;font-family:inherit">复制</button>
     </div></div>
-  <div class="frow"><label>激活码（赞助后作者回复给你）</label>
+  <div class="frow"><label>激活码（作者直接发给你，无需赞助即可用）</label>
     <input id="actCode" placeholder="XXXXX-XXXXX-XXXXX-XXXXX" style="font-family:Consolas,monospace;letter-spacing:.05em"
            onkeydown="if(event.key==='Enter')doActivate('code')"></div>
+  <div style="font-size:11.5px;color:#a1a1aa;line-height:1.6;margin-bottom:6px">
+    💡 激活码不绑定设备：手机、电脑等任意多台设备都能用同一张码。请把它保存在备忘录里，新设备打开本站输入即可。
+  </div>
   <div id="actOnlineRow" style="display:none">
     <div style="border-top:1px solid var(--line);margin:20px 0 14px"></div>
     <div class="frow"><label>或：赞助订单号在线验证（秒开）</label>
@@ -579,8 +582,9 @@ async function loadPro(){
 }
 function openActivate(errMsg){
   if(SITE_PAID){
-    // 网站付费模式：赞助/激活码解锁
-    $("actMc").value=deviceId();
+    // 网站付费模式：赞助/激活码解锁（激活码不绑设备，机器码行隐藏）
+    $("actMcRow").style.display="none";
+    $("actOnlineRow").style.display="block";
     if(errMsg){$("actMsg").textContent=errMsg;$("actMsg").style.color="var(--err)"}
     else{$("actMsg").textContent="";$("actMsg").style.color=""}
     actDlg.showModal();
@@ -607,14 +611,16 @@ async function doActivate(kind){
   m.textContent="正在验证…";m.style.color="var(--sub)";
   try{
     if(SITE_PAID){
-      // 网站版：走服务器激活接口，成功后保存票据
+      // 网站版：走服务器激活接口，成功后保存票据（不绑设备，多设备共用同一码）
       const ep=kind==="order"?"/api/pro/order":"/api/pro/code";
+      const body=kind==="order"?{order_no:val}:{code:val};
       const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(kind==="order"?{order_no:val,device:deviceId()}:{code:val,device:deviceId()})});
+        body:JSON.stringify(body)});
       const d=await r.json();
       if(d.ok){saveLicense({kind:d.kind,uid:d.uid,expiry:d.expiry,sig:d.sig});
-        m.textContent=`激活成功！有效期至 ${d.expiry}`;m.style.color="#15803d";
-        setTimeout(()=>{actDlg.close();location.reload()},900)}
+        m.innerHTML=`激活成功！有效期至 ${d.expiry}。<br>💡 这张激活码可在手机/电脑等多台设备使用，请妥善保存。`;
+        m.style.color="#15803d";
+        setTimeout(()=>{actDlg.close();location.reload()},1600)}
       else{m.textContent=d.error||"激活失败";m.style.color="var(--err)"}
       return;
     }
