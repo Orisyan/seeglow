@@ -476,7 +476,16 @@ def ask(req: AskReq, request: Request):
         raise HTTPException(404, "未找到该视频的问答上下文")
 
     data = _json.loads(ctx_path.read_text(encoding="utf-8"))
-    items = data.get("items") or []
+    items = list(data.get("items") or [])
+
+    # 期末资料并入问答上下文：kind=doc 的条目用 (来源,页码) 做定位
+    docs = _load_docs(req.file)
+    for b in docs.get("blocks", []):
+        items.append({
+            "start": 0,
+            "end": 0,
+            "text": f"[资料·{b.get('source','')} 第{b.get('page','?')}页] {b.get('text','')}",
+        })
     if not items:
         raise HTTPException(404, "该笔记没有可用的问答上下文")
 
@@ -484,17 +493,24 @@ def ask(req: AskReq, request: Request):
     from .bilibili import fmt_ts
 
     def _fmt(s):
-        return fmt_ts(float(s))
+        try:
+            return fmt_ts(float(s))
+        except (TypeError, ValueError):
+            return "00:00"
 
     def score(text: str) -> int:
         return sum(text.count(q[i : i + 2]) for i in range(len(q) - 1))
 
+    # 资料条目不参与 [start-end] 格式化，但仍参与相关性排序
     scored = sorted(items, key=lambda it: -score(it["text"]))
-    budget, chosen = 12000, []
+    budget, chosen, chosen_raw = 12000, [], []
     for it in scored:
         if budget <= 0:
             break
-        piece = f"[{_fmt(it['start'])}-{_fmt(it['end'])}] {it['text']}"
+        if it["text"].startswith("[资料·"):
+            piece = it["text"]
+        else:
+            piece = f"[{_fmt(it['start'])}-{_fmt(it['end'])}] {it['text']}"
         if len(piece) > budget:
             piece = piece[:budget]
         chosen.append(piece)
@@ -917,6 +933,246 @@ def site_status(request: Request):
 
     auth = pro_web.check_request_auth(request)
     return {"site_paid": True, "licensed": bool(auth), "expiry": (auth or {}).get("expiry", "")}
+
+
+# ---------------- 期末冲刺：教师资料上传 + 备考融合 ----------------
+
+DOC_MAX_BYTES = 30 * 1024 * 1024        # 单文件上限
+DOC_MAX_COUNT = 5                        # 每份笔记最多关联文件数
+
+
+def _docs_path(fname: str) -> Path:
+    return _output_dir() / (fname + ".docs.json")
+
+
+def _load_docs(fname: str) -> dict:
+    p = _docs_path(fname)
+    if not p.exists():
+        return {"files": [], "blocks": []}
+    try:
+        return _json.loads(p.read_text(encoding="utf-8")) or {"files": [], "blocks": []}
+    except Exception:
+        return {"files": [], "blocks": []}
+
+
+def _save_docs(fname: str, data: dict):
+    _output_dir().mkdir(parents=True, exist_ok=True)
+    _docs_path(fname).write_text(_json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+class StudyPackReq(BaseModel):
+    file: str            # 笔记文件名（.md）
+    mode: str = "fuse"   # fuse=备考融合包 / exam=押题卷
+    count: Optional[int] = 8
+    token: Optional[str] = None
+    cred: Optional[dict] = None
+
+
+@app.post("/api/upload_doc")
+async def upload_doc(request: Request, file: UploadFile = File(...),
+                     note_file: str = Form(...), api_base: str = Form(""),
+                     api_key: str = Form(""), model: str = Form("")):
+    """上传教师 PPT/往年卷并解析，追加到笔记的 .docs.json。返回提取概要。"""
+    if PUBLIC_MODE:
+        _check_file_access(note_file, request, request.headers.get("x-seeglow-auth", ""))
+    require_paid(request)
+
+    suffix = "." + (file.filename or "x").rsplit(".", 1)[-1].lower()
+    from .studydoc import allowed_ext
+
+    if not allowed_ext(suffix):
+        raise HTTPException(400, f"暂不支持 {suffix} 资料（支持 pptx / docx / pdf / txt / md / 图片）")
+
+    import os as _os
+    import tempfile as _tf
+
+    dest = Path(_tf.gettempdir()) / f"seeglow_doc_{int(time.time())}_{_os.getpid()}{suffix}"
+    try:
+        size = 0
+        with open(dest, "wb") as f:
+            while True:
+                chunk = await file.read(1 << 20)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > DOC_MAX_BYTES:
+                    raise HTTPException(400, f"文件超过 {DOC_MAX_BYTES // (1024*1024)}MB 上限")
+                f.write(chunk)
+        if size == 0:
+            raise HTTPException(400, "文件为空")
+
+        data = _load_docs(note_file)
+        existing_names = [x["name"] for x in data.get("files", [])]
+        fname_disp = (file.filename or "资料").rsplit(".", 1)[0]
+        if fname_disp in existing_names:
+            raise HTTPException(400, "该文件已上传过本笔记（同名）。如需替换请先删除对应记录或改名重传")
+        data["files"] = (data.get("files", []) + [{"name": fname_disp, "ext": suffix.lstrip(".")}])[:DOC_MAX_COUNT]
+
+        # 扫描件转写走视觉模型（与画面理解同链路）
+        cfg0 = load_config()
+        notice_msgs = []
+
+        def vision_transcribe(jobs, src):
+            notice_msgs.append(f"AI 转写 {len(jobs)} 页扫描内容…")
+            from .summarize import LLMClient, SYSTEM_PROMPT
+
+            ccfg = resolve_run_cfg({"api_base": api_base, "api_key": api_key,
+                                    "model": model}, _auth(request))
+            client = LLMClient(ccfg.get("api_base"), ccfg.get("api_key"),
+                               ccfg.get("model"), ccfg.get("temperature", 0.3))
+            outs = []
+            for page_no, png_bytes in jobs:
+                import base64 as b64
+
+                b64s = b64.b64encode(png_bytes).decode()
+                msg = {"role": "user", "content": [
+                    {"type": "text", "text":
+                        "这是试卷/PPT的一页截图。请把页面上所有文字**逐字转写**为纯文本，"
+                        "保留题号、选项、公式（用文本近似），不要添加任何解释或评论。"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64s}"}},
+                ]}
+                outs.append(client.chat([{"role": "system", "content": "你是精确的文字转录员，只输出原文。"},
+                                         msg]))
+            return outs
+
+        from .studydoc import load_document
+
+        blocks = load_document(dest, vision_transcribe=vision_transcribe,
+                               notice=lambda m: notice_msgs.append(m))
+        src_name = fname_disp
+        for b in blocks:
+            b["source"] = src_name
+
+        # 同名文件重复上传时整体替换其 blocks
+        kept_blocks = [b for b in data.get("blocks", []) if b.get("source") != src_name]
+        data["blocks"] = (kept_blocks + blocks)[:12000]
+        _save_docs(note_file, data)
+        kinds = {}
+        for b in blocks:
+            kinds[b["kind"]] = kinds.get(b["kind"], 0) + 1
+        return {
+            "ok": True,
+            "file_count": len(data["files"]),
+            "block_count": len(blocks),
+            "kinds": kinds,
+            "chars": sum(len(b["text"]) for b in blocks),
+            "notices": notice_msgs[:6],
+        }
+    finally:
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+
+
+@app.post("/api/study_pack")
+def study_pack(req: StudyPackReq, request: Request):
+    """备考融合包 / 押题卷：视频笔记 × 教师资料 → 结构化 Markdown。"""
+    from .summarize import LLMClient
+
+    if PUBLIC_MODE:
+        _check_file_access(req.file, request, req.token)
+    require_paid(request)
+    base = _output_dir().resolve()
+    md_path = (base / req.file).resolve()
+    if md_path.parent != base or not md_path.exists():
+        raise HTTPException(404, "未找到该笔记，请先总结视频")
+    docs = _load_docs(req.file)
+    blocks = docs.get("blocks") or []
+    if not blocks:
+        raise HTTPException(400, "该笔记还没有上传教师资料：先点「期末冲刺」上传 PPT 或往年卷")
+
+    summary = md_path.read_text(encoding="utf-8")[:7000]
+
+    from .bilibili import fmt_ts
+    ctx_path = base / (req.file + ".ctx.json")
+    timeline = ""
+    if ctx_path.exists():
+        try:
+            items = (_json.loads(ctx_path.read_text(encoding="utf-8")) or {}).get("items") or []
+            timeline = "\n".join(
+                f"[{fmt_ts(float(it.get('start', 0)))}-{fmt_ts(float(it.get('end', it.get('start', 0))))}] "
+                f"{str(it.get('text',''))[:180]}" for it in items[:80])[:9000]
+        except Exception:
+            pass
+
+    from .studydoc import render_blocks
+
+    doc_context = render_blocks(blocks, budget=(14000 if req.mode == "fuse" else 11000))
+
+    cfg = resolve_run_cfg(req.cred, _auth(request))
+    client = LLMClient(cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"),
+                       cfg.get("temperature", 0.3))
+
+    meta = f"【视频】《{req.file.replace('.md','')}》"
+    if req.mode == "exam":
+        n = max(3, min(req.count or 8, 15))
+        user_prompt = (
+            f"{meta}\n\n【视频时间轴摘要】\n{timeline or '（无）'}\n\n"
+            f"【总结要点】\n{summary}\n\n"
+            f"【教师提供的往年卷/资料】\n{doc_context}\n\n"
+            f"{EXAM_PROMPT.format(count=n)}"
+        )
+        system = "你是经验丰富的命题老师，出的模拟题忠于原素材、难度贴近往年卷。直接输出 Markdown 正文。"
+    else:
+        user_prompt = (
+            f"{meta}\n\n【视频总结笔记】\n{summary}\n\n"
+            f"【视频时间轴摘要】\n{timeline or '（无）'}\n\n"
+            f"【教师提供的 PPT/往年卷资料】\n{doc_context}\n\n{FUSE_PROMPT}"
+        )
+        system = ("你是严谨的考研辅导老师，擅长把课堂视频与教师讲义做考点比对。"
+                  "只依据提供的材料输出，来源标注必须准确，绝不编造出处。直接输出 Markdown 正文。")
+
+    try:
+        text = client.chat([{"role": "system", "content": system},
+                            {"role": "user", "content": user_prompt}])
+    except Exception as e:
+        raise HTTPException(500, f"生成失败：{str(e)[:150]}")
+    out_name = req.file.replace(".md", "") + ("-押题卷.md" if req.mode == "exam" else "-备考包.md")
+    try:
+        (base / out_name).write_text(f"# {out_name.replace('.md','')}\n\n{text}\n", encoding="utf-8")
+    except OSError:
+        pass
+    return {"ok": True, "mode": req.mode, "text": text, "output_file": out_name}
+
+
+FUSE_PROMPT = """基于「视频总结笔记 + 时间轴」和「教师提供的资料」，生成一份期末备考融合包，结构如下：
+
+## 🎯 重点度调整说明
+简述结合教师材料后，哪些考点的重要度需要上调/下调（各列 2~4 条）。
+
+## ✅ 三方对照表
+| 考点 | 视频讲到 | 教师PPT强调 | 往年卷考过 | 建议 |
+每行一个考点，建议列给出"再看视频 [mm:ss]"或"自学补齐"。（若某类材料缺失，列内写"—"）
+
+## ⚠️ 视频没讲但老师强调的盲区
+逐条列出，附 PPT 页码来源；这些是学生自学清单。
+
+## 📌 划重点清单
+10 条以内冲刺要点：考点一句话结论 + 出处（[mm:ss] 或 PPT 页码）。
+
+要求：
+- 所有标注必须能在给定材料中找到依据，找不到就注明（未定位）
+- 表格用标准 Markdown 管道语法"""
+
+EXAM_PROMPT = """仔细研究「教师提供的往年卷/资料」中的题型、分值结构与出题风格，
+并结合视频知识点，出一套 **{count} 题**的全新模拟卷：
+
+## 📄 模拟卷说明
+用 2~3 句话说明你模仿了往年卷的哪些特征。
+
+## 试卷正文
+严格参照往年卷常见题型组织（选择/填空/计算/论述等，以资料中实际出现的为准）；
+每题后紧跟引用格式的答案与解析：
+
+> **答案：** ……
+> **解析：** 该考点来自视频 [mm:ss]（或 PPT 第 X 页）；解题关键步骤……
+
+## 🧭 复习指向
+题目→考点→视频中位置的对照列表（方便查漏）。
+
+要求：不超纲——除非往年卷中出现，否则只用视频与资料覆盖的知识点；
+每道题都须有可核查的出处标注。"""
 
 
 def _disable_quick_edit():
