@@ -21,6 +21,7 @@ DEFAULTS = {
     "temperature": 0.3,
     "sessdata": "",
     "output_dir": str(DEFAULT_OUTPUT),
+    "vision": False,  # 画面理解：无字幕视频听音频的同时看画面（题目/PPT），需模型支持图片输入
 }
 
 # 服务商预设：一个 Key、一个模型，既能听音频又能写总结
@@ -54,6 +55,10 @@ def load_config() -> dict:
         env = os.getenv(f"SEELOW_{key.upper()}")
         if env:
             cfg[key] = env
+    # 布尔配置兼容 "1"/"true"/"on" 等环境变量写法
+    v = cfg.get("vision")
+    if isinstance(v, str):
+        cfg["vision"] = v.strip().lower() in ("1", "true", "on", "yes")
     cfg["output_dir"] = str(cfg.get("output_dir") or DEFAULT_OUTPUT)
     return cfg
 
