@@ -30,6 +30,7 @@ from pydantic import BaseModel
 PLAN_PRICE = float(os.getenv("SEEGLOW_PLAN_PRICE", "29.9"))   # 月度档实付门槛
 PLAN_DAYS = int(os.getenv("SEEGLOW_PLAN_DAYS", "35"))          # 每月折算天数
 CODE_PLANS = {"month": PLAN_DAYS, "year": PLAN_DAYS * 12 + 15}
+LIFETIME_CODE_EXPIRY = "9999-12-31"   # 永久码：到期日取极大值，实际等效永久
 
 _verify_store = None   # modal.Dict：订单→设备绑定、激活码→绑定、限流
 
@@ -249,15 +250,23 @@ def is_code_revoked(serial: str) -> bool:
 
 # ---------------- 激活码签发（作者侧） ----------------
 
+def _plan_expiry(plan: str) -> str:
+    """各档位的到期日。permanent（永久）取极大日期，校验逻辑无需特判。"""
+    if plan in ("lifetime", "perm", "forever"):
+        return LIFETIME_CODE_EXPIRY
+    days = CODE_PLANS.get(plan, PLAN_DAYS)
+    return (date.today() + timedelta(days=days)).isoformat()
+
+
 def make_web_code(plan: str = "month") -> str:
     """生成一张不绑定设备的激活码（作者侧工具用）。
 
     码结构：base36( 到期日YYYYMMDD + 随机序号8hex + HMAC签名10hex )
     序号随机，同一张码可在任意多台设备激活；防伪造靠 HMAC，
     防滥用靠服务端撤销名单（revoke_code）与限频。
+    plan="lifetime" 签发永久码。
     """
-    days = CODE_PLANS.get(plan, PLAN_DAYS)
-    expiry = (date.today() + timedelta(days=days)).isoformat()
+    expiry = _plan_expiry(plan)
     serial = uuid.uuid4().hex[:8]
     payload = expiry.replace("-", "") + serial + _code_sig(expiry, serial)  # 8+8+10 hex
     code = ""
