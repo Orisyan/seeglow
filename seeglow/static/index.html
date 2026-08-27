@@ -55,6 +55,8 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .picker button.alt{background:var(--card);color:var(--sub);border:1.5px solid var(--line);font-weight:500}
 .file-btn{background:var(--card);border:1.5px solid var(--line);border-radius:8px;padding:4px 10px;font-size:12.5px;color:var(--sub);cursor:pointer;font-family:inherit}
 .file-btn:hover{color:var(--ink);border-color:#c4c4c8}
+.hot-btn{background:linear-gradient(135deg,#fff7ed,#fffbeb)!important;border-color:#fdba74!important;color:#b45309!important;font-weight:600}
+.hot-btn:hover{box-shadow:0 3px 10px -4px rgba(249,115,22,.4)}
 .err{margin-top:16px;background:#fef2f2;border:1px solid #fecaca;color:var(--err);padding:12px 16px;border-radius:12px;font-size:13.5px;line-height:1.7;display:none;white-space:pre-wrap}
 
 /* progress */
@@ -178,6 +180,24 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 .pub-banner{display:none;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;
   border-radius:12px;padding:10px 16px;font-size:13px;line-height:1.7;margin-bottom:16px}
 
+/* ---------- 期末冲刺 CTA ---------- */
+.study-cta{display:none;margin-top:16px;border-radius:14px;padding:16px 18px;cursor:pointer;
+  background:linear-gradient(135deg,#fff7ed,#fffbeb);border:1.5px solid #fdba74;
+  transition:transform .1s, box-shadow .15s;position:relative}
+.study-cta:hover{transform:translateY(-1px);box-shadow:0 6px 18px -6px rgba(249,115,22,.35)}
+.study-cta .t{font-size:14.5px;font-weight:700;color:#9a3412;display:flex;align-items:center;gap:8px}
+.study-cta .t .pill{background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-size:10.5px;
+  padding:1px 8px;border-radius:99px;letter-spacing:.08em}
+.study-cta .d{font-size:12.5px;color:#b45309;margin-top:5px;line-height:1.65}
+.study-cta .go{position:absolute;right:16px;top:50%;transform:translateY(-50%);
+  background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;border:none;border-radius:10px;
+  padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.study-cta .x{position:absolute;right:6px;top:6px;border:none;background:none;color:#d97706;
+  font-size:13px;cursor:pointer;opacity:.6;font-family:inherit}
+.study-cta .x:hover{opacity:1}
+.acts button.hot{background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;border:none;font-weight:600}
+.acts button.hot .new{font-size:9.5px;vertical-align:super;margin-left:2px}
+
 </style>
 </head>
 <body>
@@ -228,6 +248,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
               <option value="meeting">会议纪要</option>
               <option value="review">轻松杂谈</option>
             </select>
+            <button class="file-btn hot-btn" onclick="openStudy(false)" title="传老师发的 PPT/往年卷，直接出知识梳理或押题卷">📚 期末冲刺</button>
             <button class="file-btn" onclick="fileInput.click()">📁 本地音视频</button>
             <input type="file" id="fileInput" style="display:none"
                    accept=".mp4,.mkv,.flv,.mov,.avi,.webm,.mp3,.m4a,.wav,.flac,.aac,.ogg,.m4s,.ts"
@@ -274,9 +295,15 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
             <button id="cardBtn" onclick="makeFlashcards()">闪卡 .txt</button>
             <button onclick="openRewrite()">✍️ 改写文案</button>
             <button id="srtBtn" onclick="exportSRT()" title="仅B站有字幕的视频可导">字幕 .srt</button>
-            <button onclick="openStudy()" title="上传教师PPT/往年卷，融合生成备考包或押题卷">📚 期末冲刺</button>
+            <button onclick="openStudy(true)" class="hot" title="上传教师PPT/往年卷，融合生成备考包或押题卷">📚 期末冲刺<span class="new">新</span></button>
             <button onclick="window.print()" title="打印或另存为 PDF">🖨 打印/PDF</button>
           </div>
+        </div>
+        <div id="studyCta" class="study-cta" onclick="openStudy(true)">
+          <button class="x" onclick="event.stopPropagation();hideStudyCta()" title="收起">×</button>
+          <div class="t">📚 期末冲刺 <span class="pill">新功能</span></div>
+          <div class="d">老师发了 PPT 和往年卷？上传后与这支视频融合：考点三方对照、盲区自学清单、照往年卷风格出押题卷。</div>
+          <button class="go">立即冲刺 →</button>
         </div>
         <div id="dmWrap" style="display:none;margin-top:14px">
           <div style="font-size:12px;color:var(--sub);display:flex;justify-content:space-between">
@@ -410,28 +437,22 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 </dialog>
 
 <dialog id="studyDlg">
-  <h3>📚 期末冲刺</h3>
-  <div style="font-size:12.5px;color:var(--sub);line-height:1.7;margin-bottom:10px">
-    上传老师发的 <b>PPT / 往年卷</b>（支持 pptx · docx · pdf · txt · 图片，≤30MB），
-    与这支视频融合：生成考点对照的备考包，或按往年卷风格出一套押题卷。
-    每份笔记最多关联 5 个文件；扫描版 PDF/图片由 AI 逐字转写。
-  </div>
+  <h3 id="studyTitle">📚 期末冲刺</h3>
+  <div id="studyIntro" style="font-size:12.5px;color:var(--sub);line-height:1.7;margin-bottom:10px"></div>
   <div class="frow">
-    <label>上传资料（可分多次追加）</label>
-    <input type="file" id="studyFile" accept=".pptx,.docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp"
+    <label id="studyFileLabel">上传资料（可多选：pptx · docx · pdf · txt · 图片，≤30MB/个）</label>
+    <input type="file" id="studyFile" multiple accept=".pptx,.docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp"
            style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--ink)">
   </div>
   <div class="frow"><label>模式</label>
     <select id="studyMode" style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:14px;cursor:pointer">
-      <option value="fuse">🎯 备考融合包（考点三方对照 + 盲区清单）</option>
-      <option value="exam">📝 押题卷（模仿往年卷出 N 道新题带解析）</option>
     </select></div>
   <div class="frow" id="examCountRow" style="display:none"><label>题量：3 ~ 15</label>
     <input id="examCount" type="number" min="3" max="15" value="8"></div>
   <div id="studyMsg" style="font-size:13px;color:var(--sub);min-height:20px;margin-top:4px"></div>
   <div class="dlg-foot">
     <button onclick="studyDlg.close()">关闭</button>
-    <button onclick="doUploadDoc()">⬆️ 仅上传资料</button>
+    <button id="studyUploadBtn" onclick="doUploadDoc()">⬆️ 仅上传资料</button>
     <button class="pri" id="studyGoBtn" onclick="doStudyPack()">立即生成</button>
   </div>
 </dialog>
@@ -1198,9 +1219,34 @@ async function saveSettings(){
 }
 
 /* ---------- 期末冲刺：资料上传 + 备考融合 ---------- */
-function openStudy(){
-  if(!lastFileName)return alert("请先生成或打开一份视频笔记");
-  $("studyMsg").textContent="";$("studyFile").value="";
+let studyFusion = false;   // true=基于当前视频笔记融合；false=独立模式（纯资料）
+const STUDY_MODES = {
+  fusion: [
+    ["fuse", "🎯 备考融合包（考点三方对照 + 盲区清单）"],
+    ["exam", "📝 押题卷（结合视频与往年卷风格出题）"],
+  ],
+  standalone: [
+    ["outline", "🗂 知识梳理（提炼考点 + 背诵清单）"],
+    ["exam", "📝 押题卷（模仿往年卷出题带解析）"],
+  ],
+};
+function hideStudyCta(){
+  $("studyCta").style.display="none";
+  localStorage.setItem("studyCtaHidden","1");
+}
+function openStudy(fusion){
+  studyFusion = fusion === true;
+  if(studyFusion && !lastFileName) return alert("请先生成或打开一份视频笔记");
+  $("studyTitle").textContent = studyFusion ? "📚 期末冲刺 · 融合本视频" : "📚 期末冲刺";
+  $("studyIntro").innerHTML = studyFusion
+    ? "把老师发的资料与<b>当前视频笔记</b>融合：考点三方对照、盲区清单，或结合视频出押题卷。每份笔记最多 5 个文件。"
+    : "直接上传老师发的 <b>PPT / 往年卷</b>（pptx · docx · pdf · txt · 图片，≤30MB/个），无需视频即可生成知识梳理或押题卷。扫描件由 AI 逐字转写。";
+  $("studyMode").innerHTML = (STUDY_MODES[studyFusion ? "fusion" : "standalone"])
+    .map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
+  $("examCountRow").style.display = "none";
+  $("studyUploadBtn").style.display = studyFusion ? "" : "none";
+  $("studyMsg").textContent = "";
+  $("studyFile").value = "";
   studyDlg.showModal();
 }
 function _studyFormData(){
@@ -1223,28 +1269,44 @@ async function doUploadDoc(){
   }catch(e){m.textContent="上传失败："+e.message;m.style.color="var(--err)"}
 }
 async function doStudyPack(){
-  if(!lastFileName)return;
-  // 弹窗里有新选的文件 → 先上传再生成
-  if($("studyFile").files[0]){
+  if(studyFusion && !lastFileName)return;
+  if(studyFusion && $("studyFile").files[0]){
     await doUploadDoc();
     if(!$("studyMsg").textContent.startsWith("✅"))return;   // 上传失败则终止
   }
   const m=$("studyMsg");
   const mode=$("studyMode").value;
+  const picked=[...$("studyFile").files];
+  if(!studyFusion && !picked.length){m.textContent="请先选择资料文件";m.style.color="var(--err)";return}
   const btn=$("studyGoBtn");btn.disabled=true;
-  m.textContent=mode==="exam"?"正在研究往年卷风格并出题…（约1~2分钟）":"正在做考点三方对照…（约1~2分钟）";
+  m.textContent=mode==="exam"?"正在研究往年卷风格并出题…（约1~2分钟）":"正在提炼考点与知识结构…（约1~2分钟）";
   try{
-    const d=await api("/api/study_pack",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({file:lastFileName,mode,count:parseInt($("examCount").value)||8,token:window.taskToken||"",cred:credPayload()})});
+    let d;
+    if(studyFusion){
+      d=await api("/api/study_pack",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({file:lastFileName,mode,count:parseInt($("examCount").value)||8,token:window.taskToken||"",cred:credPayload()})});
+    }else{
+      const fd=new FormData();
+      picked.forEach(f=>fd.append("files",f));
+      fd.append("mode",mode);
+      fd.append("count",String(parseInt($("examCount").value)||8));
+      const cred=credPayload();
+      if(cred){fd.append("api_base",cred.api_base||"");fd.append("api_key",cred.api_key);fd.append("model",cred.model||"")}
+      const r=await fetch("/api/study_pack_standalone",{method:"POST",headers:authHeaders(),body:fd});
+      d=await r.json();
+      if(!r.ok)throw new Error(d.detail||("失败 "+r.status));
+    }
     studyDlg.close();
     lastResult=d.text;lastFileName=d.output_file;
     window.curVideo=null;
+    if((d.notices||[]).length)showErr((d.notices).join("\n"));
     $("resultTitle").textContent=d.output_file.replace(/\.md$/,"");
     $("mdBody").innerHTML=mdRender(d.text);
     enhanceStudyPack();
     loadHistory();
     $("resultCard").scrollIntoView({behavior:"smooth"});
   }catch(e){m.textContent="生成失败："+e.message}
+  btn.disabled=false;
 }
 document.addEventListener("change",e=>{
   if(e.target&&e.target.id==="studyMode"){
