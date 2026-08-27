@@ -1001,44 +1001,55 @@ async def upload_doc(request: Request, file: UploadFile = File(...),
         if size == 0:
             raise HTTPException(400, "文件为空")
 
-        data = _load_docs(note_file)
-        existing_names = [x["name"] for x in data.get("files", [])]
-        fname_disp = (file.filename or "资料").rsplit(".", 1)[0]
-        if fname_disp in existing_names:
-            raise HTTPException(400, "该文件已上传过本笔记（同名）。如需替换请先删除对应记录或改名重传")
-        data["files"] = (data.get("files", []) + [{"name": fname_disp, "ext": suffix.lstrip(".")}])[:DOC_MAX_COUNT]
+        try:
+            data = _load_docs(note_file)
+            existing_names = [x["name"] for x in data.get("files", [])]
+            fname_disp = (file.filename or "资料").rsplit(".", 1)[0]
+            if fname_disp in existing_names:
+                raise HTTPException(400, "该文件已上传过本笔记（同名）。如需替换请先删除对应记录或改名重传")
+            data["files"] = (data.get("files", []) + [{"name": fname_disp, "ext": suffix.lstrip(".")}])[:DOC_MAX_COUNT]
 
-        # 扫描件转写走视觉模型（与画面理解同链路）
-        cfg0 = load_config()
-        notice_msgs = []
+            # 扫描件转写走视觉模型（与画面理解同链路）
+            cfg0 = load_config()
+            notice_msgs = []
 
-        def vision_transcribe(jobs, src):
-            notice_msgs.append(f"AI 转写 {len(jobs)} 页扫描内容…")
-            from .summarize import LLMClient, SYSTEM_PROMPT
+            def vision_transcribe(jobs, src):
+                notice_msgs.append(f"AI 转写 {len(jobs)} 页扫描内容…")
+                from .summarize import LLMClient, SYSTEM_PROMPT
 
-            ccfg = resolve_run_cfg({"api_base": api_base, "api_key": api_key,
-                                    "model": model}, _auth(request))
-            client = LLMClient(ccfg.get("api_base"), ccfg.get("api_key"),
-                               ccfg.get("model"), ccfg.get("temperature", 0.3))
-            outs = []
-            for page_no, png_bytes in jobs:
-                import base64 as b64
+                ccfg = resolve_run_cfg({"api_base": api_base, "api_key": api_key,
+                                        "model": model}, _auth(request))
+                client = LLMClient(ccfg.get("api_base"), ccfg.get("api_key"),
+                                   ccfg.get("model"), ccfg.get("temperature", 0.3))
+                outs = []
+                for page_no, png_bytes in jobs:
+                    import base64 as b64
 
-                b64s = b64.b64encode(png_bytes).decode()
-                msg = {"role": "user", "content": [
-                    {"type": "text", "text":
-                        "这是试卷/PPT的一页截图。请把页面上所有文字**逐字转写**为纯文本，"
-                        "保留题号、选项、公式（用文本近似），不要添加任何解释或评论。"},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64s}"}},
-                ]}
-                outs.append(client.chat([{"role": "system", "content": "你是精确的文字转录员，只输出原文。"},
-                                         msg]))
-            return outs
+                    b64s = b64.b64encode(png_bytes).decode()
+                    msg = {"role": "user", "content": [
+                        {"type": "text", "text":
+                            "这是试卷/PPT的一页截图。请把页面上所有文字**逐字转写**为纯文本，"
+                            "保留题号、选项、公式（用文本近似），不要添加任何解释或评论。"},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64s}"}},
+                    ]}
+                    outs.append(client.chat([{"role": "system", "content": "你是精确的文字转录员，只输出原文。"},
+                                             msg]))
+                return outs
 
-        from .studydoc import load_document
+            from .studydoc import load_document
 
-        blocks = load_document(dest, vision_transcribe=vision_transcribe,
-                               notice=lambda m: notice_msgs.append(m))
+            try:
+                blocks = load_document(dest, vision_transcribe=vision_transcribe,
+                                       notice=lambda m: notice_msgs.append(m))
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+            except Exception as e:
+                raise HTTPException(400, f"解析失败：文件可能损坏或格式异常（{str(e)[:80]}）")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(400, f"解析失败：{str(e)[:120]}")
+
         src_name = fname_disp
         for b in blocks:
             b["source"] = src_name
@@ -1136,6 +1147,131 @@ def study_pack(req: StudyPackReq, request: Request):
     return {"ok": True, "mode": req.mode, "text": text, "output_file": out_name}
 
 
+@app.post("/api/study_pack_standalone")
+async def study_pack_standalone(request: Request, files: list[UploadFile] = File(...),
+                                mode: str = Form("outline"), count: int = Form(8),
+                                api_base: str = Form(""), api_key: str = Form(""),
+                                model: str = Form("")):
+    """独立期末冲刺：不依赖视频笔记，直接对教师资料出知识梳理或押题卷。
+
+    产物保存为一 notes 笔记（含 .docs.json 与最小 ctx.json），可进历史、可继续 AI 问答。
+    """
+    import datetime as _dt
+    import tempfile as _tf
+    import os as _os
+
+    require_paid(request)
+    files = [f for f in files if f and (f.filename or "").strip()]
+    if not files:
+        raise HTTPException(400, "请至少上传一个资料文件")
+    if len(files) > DOC_MAX_COUNT:
+        raise HTTPException(400, f"一次最多 {DOC_MAX_COUNT} 个文件")
+    if mode not in ("outline", "exam", "fuse"):
+        mode = "outline"
+
+    from .studydoc import allowed_ext, load_document, render_blocks
+    from .bilibili import safe_filename
+
+    notice_msgs = []
+
+    def vision_transcribe(jobs, src):
+        notice_msgs.append(f"AI 转写 {len(jobs)} 页扫描内容…")
+        from .summarize import LLMClient
+
+        ccfg = resolve_run_cfg({"api_base": api_base, "api_key": api_key, "model": model},
+                               _auth(request))
+        client = LLMClient(ccfg.get("api_base"), ccfg.get("api_key"), ccfg.get("model"),
+                           ccfg.get("temperature", 0.3))
+        import base64 as b64
+
+        outs = []
+        for page_no, png_bytes in jobs:
+            b64s = b64.b64encode(png_bytes).decode()
+            msg = {"role": "user", "content": [
+                {"type": "text", "text": "这是试卷/PPT的一页截图。请把页面上所有文字**逐字转写**为纯文本，"
+                                         "保留题号、选项、公式（用文本近似），不要添加任何解释或评论。"},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64s}"}},
+            ]}
+            outs.append(client.chat([{"role": "system", "content": "你是精确的文字转录员，只输出原文。"},
+                                     msg]))
+        return outs
+
+    all_blocks, names = [], []
+    for f in files:
+        suffix = "." + f.filename.rsplit(".", 1)[-1].lower()
+        if not allowed_ext(suffix):
+            raise HTTPException(400, f"暂不支持 {suffix}（支持 pptx / docx / pdf / txt / md / 图片）")
+        disp = f.filename.rsplit(".", 1)[0]
+        names.append(disp)
+        dest = Path(_tf.gettempdir()) / f"seeglow_sd_{int(time.time()*1000)}_{_os.getpid()}{suffix}"
+        try:
+            size = 0
+            with open(dest, "wb") as fo:
+                while True:
+                    chunk = await f.read(1 << 20)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > DOC_MAX_BYTES:
+                        raise HTTPException(400, f"{f.filename} 超过 {DOC_MAX_BYTES // (1024*1024)}MB 上限")
+                    fo.write(chunk)
+            if size == 0:
+                raise HTTPException(400, f"{f.filename} 为空")
+            try:
+                blocks = load_document(dest, vision_transcribe=vision_transcribe,
+                                       notice=lambda m: notice_msgs.append(m))
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+            except Exception as e:
+                raise HTTPException(400, f"{f.filename} 解析失败：文件可能损坏或格式异常（{str(e)[:80]}）")
+            for b in blocks:
+                b["source"] = disp
+            all_blocks.extend(blocks)
+        finally:
+            try:
+                dest.unlink()
+            except OSError:
+                pass
+
+    doc_context = render_blocks(all_blocks, budget=14000)
+    cfg = resolve_run_cfg({"api_base": api_base, "api_key": api_key, "model": model}, _auth(request))
+
+    from .summarize import LLMClient
+
+    client = LLMClient(cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"),
+                       cfg.get("temperature", 0.3))
+
+    if mode == "exam":
+        n = max(3, min(count or 8, 15))
+        user_prompt = (f"【教师提供的往年卷/资料】（未提供视频）\n{doc_context}\n\n"
+                       f"{EXAM_PROMPT.format(count=n)}")
+        kind_label, system = "押题卷", (
+            "你是经验丰富的命题老师，出的模拟题忠于原素材、难度贴近往年卷。直接输出 Markdown 正文。")
+    else:
+        user_prompt = f"【教师提供的资料】\n{doc_context}\n\n{OUTLINE_PROMPT}"
+        kind_label, system = "知识梳理", (
+            "你是严谨的考研辅导老师，擅长从讲义与真题中提炼考点。只依据材料输出，"
+            "来源标注必须准确，绝不编造出处。直接输出 Markdown 正文。")
+
+    try:
+        text = client.chat([{"role": "system", "content": system},
+                            {"role": "user", "content": user_prompt}])
+    except Exception as e:
+        raise HTTPException(500, f"生成失败：{str(e)[:150]}")
+
+    base = _output_dir()
+    base.mkdir(parents=True, exist_ok=True)
+    today = _dt.date.today().strftime("%Y%m%d")
+    out_name = f"{today}-{kind_label}-{safe_filename('、'.join(names[:2]))}.md"
+    (base / out_name).write_text(f"# {out_name.replace('.md', '')}\n\n{text}\n", encoding="utf-8")
+    _save_docs(out_name, {"files": [{"name": n} for n in names], "blocks": all_blocks[:12000]})
+    (base / (out_name + ".ctx.json")).write_text(
+        _json.dumps({"title": out_name.replace(".md", ""), "url": "", "items": []},
+                    ensure_ascii=False), encoding="utf-8")
+    return {"ok": True, "mode": mode, "text": text, "output_file": out_name,
+            "notices": notice_msgs[:6]}
+
+
 FUSE_PROMPT = """基于「视频总结笔记 + 时间轴」和「教师提供的资料」，生成一份期末备考融合包，结构如下：
 
 ## 🎯 重点度调整说明
@@ -1154,6 +1290,24 @@ FUSE_PROMPT = """基于「视频总结笔记 + 时间轴」和「教师提供的
 要求：
 - 所有标注必须能在给定材料中找到依据，找不到就注明（未定位）
 - 表格用标准 Markdown 管道语法"""
+
+OUTLINE_PROMPT = """仅依据「教师提供的资料」（PPT/讲义/往年卷），生成一份结构化知识梳理笔记：
+
+## 📚 资料概览
+用 3~5 句话概括这份材料覆盖的主题范围与资料构成。
+
+## 🗂 知识梳理（按资料原有章节/页码顺序组织）
+每个知识点：
+- ★重要度（★★★必考 / ★★常考 / ★了解，依据往年卷出题情况与老师强调程度判断）
+- 一句话讲透定义/公式/结论；术语加粗；标注来源（PPT第X页 / 试卷年份第X题）
+
+## ❓ 往年卷透露的考法
+分析资料中试卷的题型分布（选择/计算/论述各多少分），指出每类题型对应的知识模块。
+
+## 🔁 背诵清单
+最后给出 10 条以内"考前一晚背这些"的一句话要点。
+
+要求：只依据材料本身，不要脑补材料外的内容；材料自相矛盾处如实指出。"""
 
 EXAM_PROMPT = """仔细研究「教师提供的往年卷/资料」中的题型、分值结构与出题风格，
 并结合视频知识点，出一套 **{count} 题**的全新模拟卷：
