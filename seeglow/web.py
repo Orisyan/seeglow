@@ -960,6 +960,13 @@ def _save_docs(fname: str, data: dict):
     _docs_path(fname).write_text(_json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
+def _split_roles(blocks: list) -> tuple[list, list]:
+    """blocks 按 role 分成 (内容资料, 标准模板卷)。旧数据无 role 字段视为 content。"""
+    content = [b for b in blocks if b.get("role", "content") == "content"]
+    template = [b for b in blocks if b.get("role") == "template"]
+    return content, template
+
+
 class StudyPackReq(BaseModel):
     file: str            # 笔记文件名（.md）
     mode: str = "fuse"   # fuse=备考融合包 / exam=押题卷
@@ -970,12 +977,17 @@ class StudyPackReq(BaseModel):
 
 @app.post("/api/upload_doc")
 async def upload_doc(request: Request, file: UploadFile = File(...),
-                     note_file: str = Form(...), api_base: str = Form(""),
-                     api_key: str = Form(""), model: str = Form("")):
-    """上传教师 PPT/往年卷并解析，追加到笔记的 .docs.json。返回提取概要。"""
+                     note_file: str = Form(...), role: str = Form("content"),
+                     api_base: str = Form(""), api_key: str = Form(""), model: str = Form("")):
+    """上传教师 PPT/往年卷并解析，追加到笔记的 .docs.json。返回提取概要。
+
+    role: content=综合题卷/资料（题目内容来源） / template=标准模板卷（题型结构参照）
+    """
     if PUBLIC_MODE:
         _check_file_access(note_file, request, request.headers.get("x-seeglow-auth", ""))
     require_paid(request)
+    if role not in ("content", "template"):
+        role = "content"
 
     suffix = "." + (file.filename or "x").rsplit(".", 1)[-1].lower()
     from .studydoc import allowed_ext
@@ -1007,7 +1019,7 @@ async def upload_doc(request: Request, file: UploadFile = File(...),
             fname_disp = (file.filename or "资料").rsplit(".", 1)[0]
             if fname_disp in existing_names:
                 raise HTTPException(400, "该文件已上传过本笔记（同名）。如需替换请先删除对应记录或改名重传")
-            data["files"] = (data.get("files", []) + [{"name": fname_disp, "ext": suffix.lstrip(".")}])[:DOC_MAX_COUNT]
+            data["files"] = (data.get("files", []) + [{"name": fname_disp, "ext": suffix.lstrip("."), "role": role}])[:DOC_MAX_COUNT]
 
             # 扫描件转写走视觉模型（与画面理解同链路）
             cfg0 = load_config()
@@ -1053,6 +1065,7 @@ async def upload_doc(request: Request, file: UploadFile = File(...),
         src_name = fname_disp
         for b in blocks:
             b["source"] = src_name
+            b["role"] = role
 
         # 同名文件重复上传时整体替换其 blocks
         kept_blocks = [b for b in data.get("blocks", []) if b.get("source") != src_name]
@@ -1090,7 +1103,8 @@ def study_pack(req: StudyPackReq, request: Request):
         raise HTTPException(404, "未找到该笔记，请先总结视频")
     docs = _load_docs(req.file)
     blocks = docs.get("blocks") or []
-    if not blocks:
+    content_blocks, template_blocks = _split_roles(blocks)
+    if not content_blocks and not template_blocks:
         raise HTTPException(400, "该笔记还没有上传教师资料：先点「期末冲刺」上传 PPT 或往年卷")
 
     summary = md_path.read_text(encoding="utf-8")[:7000]
@@ -1109,7 +1123,8 @@ def study_pack(req: StudyPackReq, request: Request):
 
     from .studydoc import render_blocks
 
-    doc_context = render_blocks(blocks, budget=(14000 if req.mode == "fuse" else 11000))
+    doc_context = render_blocks(content_blocks, budget=(14000 if req.mode == "fuse" else 11000))
+    template_context = render_blocks(template_blocks, budget=8000)
 
     cfg = resolve_run_cfg(req.cred, _auth(request))
     client = LLMClient(cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"),
@@ -1118,11 +1133,15 @@ def study_pack(req: StudyPackReq, request: Request):
     meta = f"【视频】《{req.file.replace('.md','')}》"
     if req.mode == "exam":
         n = max(3, min(req.count or 8, 15))
+        structure = EXAM_STRUCTURE_TPL if template_blocks else EXAM_STRUCTURE_NO_TPL
         user_prompt = (
             f"{meta}\n\n【视频时间轴摘要】\n{timeline or '（无）'}\n\n"
-            f"【总结要点】\n{summary}\n\n"
-            f"【教师提供的往年卷/资料】\n{doc_context}\n\n"
-            f"{EXAM_PROMPT.format(count=n)}"
+            + EXAM_PROMPT.format(
+                count=n,
+                content=doc_context or "（未上传综合题卷）",
+                template=template_context or "（未上传标准模板卷）",
+                structure_rule=structure,
+            )
         )
         system = "你是经验丰富的命题老师，出的模拟题忠于原素材、难度贴近往年卷。直接输出 Markdown 正文。"
     else:
@@ -1149,12 +1168,14 @@ def study_pack(req: StudyPackReq, request: Request):
 
 @app.post("/api/study_pack_standalone")
 async def study_pack_standalone(request: Request, files: list[UploadFile] = File(...),
+                                template_files: list[UploadFile] = File(default=[]),
                                 mode: str = Form("outline"), count: int = Form(8),
                                 api_base: str = Form(""), api_key: str = Form(""),
                                 model: str = Form("")):
     """独立期末冲刺：不依赖视频笔记，直接对教师资料出知识梳理或押题卷。
 
-    产物保存为一 notes 笔记（含 .docs.json 与最小 ctx.json），可进历史、可继续 AI 问答。
+    files=综合题卷/资料（内容来源）；template_files=标准模板卷（可选，仅作题型结构参照）。
+    产物保存为一份笔记（含 .docs.json 与最小 ctx.json），可进历史、可继续 AI 问答。
     """
     import datetime as _dt
     import tempfile as _tf
@@ -1162,9 +1183,10 @@ async def study_pack_standalone(request: Request, files: list[UploadFile] = File
 
     require_paid(request)
     files = [f for f in files if f and (f.filename or "").strip()]
-    if not files:
+    template_files = [f for f in (template_files or []) if f and (f.filename or "").strip()]
+    if not files and not template_files:
         raise HTTPException(400, "请至少上传一个资料文件")
-    if len(files) > DOC_MAX_COUNT:
+    if len(files) + len(template_files) > DOC_MAX_COUNT:
         raise HTTPException(400, f"一次最多 {DOC_MAX_COUNT} 个文件")
     if mode not in ("outline", "exam", "fuse"):
         mode = "outline"
@@ -1196,13 +1218,15 @@ async def study_pack_standalone(request: Request, files: list[UploadFile] = File
                                      msg]))
         return outs
 
-    all_blocks, names = [], []
-    for f in files:
+    all_blocks, names, all_meta = [], [], []
+    for f, role in ([(f, "content") for f in files] + [(f, "template") for f in template_files]):
         suffix = "." + f.filename.rsplit(".", 1)[-1].lower()
         if not allowed_ext(suffix):
             raise HTTPException(400, f"暂不支持 {suffix}（支持 pptx / docx / pdf / txt / md / 图片）")
         disp = f.filename.rsplit(".", 1)[0]
-        names.append(disp)
+        if role == "content":
+            names.append(disp)
+        all_meta.append({"name": disp, "role": role})
         dest = Path(_tf.gettempdir()) / f"seeglow_sd_{int(time.time()*1000)}_{_os.getpid()}{suffix}"
         try:
             size = 0
@@ -1226,6 +1250,7 @@ async def study_pack_standalone(request: Request, files: list[UploadFile] = File
                 raise HTTPException(400, f"{f.filename} 解析失败：文件可能损坏或格式异常（{str(e)[:80]}）")
             for b in blocks:
                 b["source"] = disp
+                b["role"] = role
             all_blocks.extend(blocks)
         finally:
             try:
@@ -1233,7 +1258,9 @@ async def study_pack_standalone(request: Request, files: list[UploadFile] = File
             except OSError:
                 pass
 
-    doc_context = render_blocks(all_blocks, budget=14000)
+    content_blocks, template_blocks = _split_roles(all_blocks)
+    doc_context = render_blocks(content_blocks, budget=12000)
+    template_context = render_blocks(template_blocks, budget=8000)
     cfg = resolve_run_cfg({"api_base": api_base, "api_key": api_key, "model": model}, _auth(request))
 
     from .summarize import LLMClient
@@ -1243,8 +1270,16 @@ async def study_pack_standalone(request: Request, files: list[UploadFile] = File
 
     if mode == "exam":
         n = max(3, min(count or 8, 15))
-        user_prompt = (f"【教师提供的往年卷/资料】（未提供视频）\n{doc_context}\n\n"
-                       f"{EXAM_PROMPT.format(count=n)}")
+        structure = EXAM_STRUCTURE_TPL if template_blocks else EXAM_STRUCTURE_NO_TPL
+        user_prompt = (
+            "（未提供视频，仅依据教师资料出卷）\n\n"
+            + EXAM_PROMPT.format(
+                count=n,
+                content=doc_context or "（未上传综合题卷）",
+                template=template_context or "（未上传标准模板卷）",
+                structure_rule=structure,
+            )
+        )
         kind_label, system = "押题卷", (
             "你是经验丰富的命题老师，出的模拟题忠于原素材、难度贴近往年卷。直接输出 Markdown 正文。")
     else:
@@ -1264,7 +1299,7 @@ async def study_pack_standalone(request: Request, files: list[UploadFile] = File
     today = _dt.date.today().strftime("%Y%m%d")
     out_name = f"{today}-{kind_label}-{safe_filename('、'.join(names[:2]))}.md"
     (base / out_name).write_text(f"# {out_name.replace('.md', '')}\n\n{text}\n", encoding="utf-8")
-    _save_docs(out_name, {"files": [{"name": n} for n in names], "blocks": all_blocks[:12000]})
+    _save_docs(out_name, {"files": all_meta[:DOC_MAX_COUNT], "blocks": all_blocks[:12000]})
     (base / (out_name + ".ctx.json")).write_text(
         _json.dumps({"title": out_name.replace(".md", ""), "url": "", "items": []},
                     ensure_ascii=False), encoding="utf-8")
@@ -1309,24 +1344,38 @@ OUTLINE_PROMPT = """仅依据「教师提供的资料」（PPT/讲义/往年卷�
 
 要求：只依据材料本身，不要脑补材料外的内容；材料自相矛盾处如实指出。"""
 
-EXAM_PROMPT = """仔细研究「教师提供的往年卷/资料」中的题型、分值结构与出题风格，
-并结合视频知识点，出一套 **{count} 题**的全新模拟卷：
+EXAM_PROMPT = """请依据下面提供的材料出一套 **{count} 题**的全新模拟卷。
+
+【综合题卷/资料】（题目内容与难度的依据）
+{content}
+
+【标准模板卷】（试卷结构的硬性模板）
+{template}
 
 ## 📄 模拟卷说明
-用 2~3 句话说明你模仿了往年卷的哪些特征。
+用 2~3 句话说明：题目内容借鉴了综合题卷哪些特征；结构上如何对齐标准模板卷
+（无模板卷时，说明如何沿用综合题卷自身的题型分布）。
 
 ## 试卷正文
-严格参照往年卷常见题型组织（选择/填空/计算/论述等，以资料中实际出现的为准）；
+{structure_rule}
+题目考查的具体知识内容与难度依据【综合题卷/资料】——考什么它说了算；
+考点可以替换组合，但不得照抄原题题干。
 每题后紧跟引用格式的答案与解析：
 
 > **答案：** ……
-> **解析：** 该考点来自视频 [mm:ss]（或 PPT 第 X 页）；解题关键步骤……
+> **解析：** 该考点来自综合题卷第X题 / PPT 第X页 / 视频 [mm:ss]；解题关键步骤……
 
 ## 🧭 复习指向
-题目→考点→视频中位置的对照列表（方便查漏）。
+题目→考点→材料位置的对照列表（方便查漏）。
 
-要求：不超纲——除非往年卷中出现，否则只用视频与资料覆盖的知识点；
-每道题都须有可核查的出处标注。"""
+要求：不超纲——只使用材料覆盖的知识点；每道题都须有可核查的出处标注。"""
+
+EXAM_STRUCTURE_TPL = ("⚠️ 试卷结构硬性对齐标准模板卷：题型种类、出现顺序、每种题型的题目数量与分值"
+                      "必须与模板卷完全一致（如模板卷为『一、选择10题×3分；二、填空5题×4分；"
+                      "三、简答4题×8分』，新卷逐项对齐，一道不多一道不少）。"
+                      "标准模板卷中出现而综合题卷没有的题型，也必须按模板卷出题（内容从资料/视频知识点中取）。")
+
+EXAM_STRUCTURE_NO_TPL = ("无标准模板卷：题型种类、数量与分值分布模仿【综合题卷/资料】中试卷自身的结构。")
 
 
 def _disable_quick_edit():
