@@ -440,9 +440,21 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
   <h3 id="studyTitle">📚 期末冲刺</h3>
   <div id="studyIntro" style="font-size:12.5px;color:var(--sub);line-height:1.7;margin-bottom:10px"></div>
   <div class="frow">
-    <label id="studyFileLabel">上传资料（可多选：pptx · docx · pdf · txt · 图片，≤30MB/个）</label>
+    <label id="studyFileLabel">综合题卷 / 资料（题目内容来源；可多选：pptx · docx · pdf · txt · 图片，≤30MB/个）</label>
     <input type="file" id="studyFile" multiple accept=".pptx,.docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp"
            style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--ink)">
+  </div>
+  <div class="frow" id="tplRow" style="display:none">
+    <label>标准模板卷（<b>可选</b>：只用来定题型结构——选择/填空/简答的数量与分值；不传则按综合题卷自身结构）</label>
+    <input type="file" id="tplFile" multiple accept=".pptx,.docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp"
+           style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--ink)">
+  </div>
+  <div class="frow" id="docRoleRow" style="display:none">
+    <label>这份资料的角色</label>
+    <select id="docRole" style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:14px;cursor:pointer">
+      <option value="content">综合题卷 / 资料（题目内容来源）</option>
+      <option value="template">标准模板卷（题型结构参照）</option>
+    </select>
   </div>
   <div class="frow"><label>模式</label>
     <select id="studyMode" style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:14px;cursor:pointer">
@@ -1244,6 +1256,8 @@ function openStudy(fusion){
   $("studyMode").innerHTML = (STUDY_MODES[studyFusion ? "fusion" : "standalone"])
     .map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
   $("examCountRow").style.display = "none";
+  $("tplRow").style.display = "none";
+  $("docRoleRow").style.display = "none";
   $("studyUploadBtn").style.display = studyFusion ? "" : "none";
   $("studyMsg").textContent = "";
   $("studyFile").value = "";
@@ -1259,6 +1273,7 @@ function _studyFormData(){
 }
 async function doUploadDoc(){
   const fd=_studyFormData();if(!fd)return;
+  fd.append("role",$("docRole").value||"content");
   const m=$("studyMsg");m.textContent="上传并解析中…（扫描页会交给 AI 转写，可能较慢）";
   try{
     const r=await fetch("/api/upload_doc",{method:"POST",headers:authHeaders(),body:fd});
@@ -1288,6 +1303,7 @@ async function doStudyPack(){
     }else{
       const fd=new FormData();
       picked.forEach(f=>fd.append("files",f));
+      [...$("tplFile").files].forEach(f=>fd.append("template_files",f));
       fd.append("mode",mode);
       fd.append("count",String(parseInt($("examCount").value)||8));
       const cred=credPayload();
@@ -1310,7 +1326,17 @@ async function doStudyPack(){
 }
 document.addEventListener("change",e=>{
   if(e.target&&e.target.id==="studyMode"){
-    $("examCountRow").style.display=e.target.value==="exam"?"block":"none";
+    const v=e.target.value;
+    $("examCountRow").style.display=v==="exam"?"block":"none";
+    if(studyFusion){
+      // 融合模式：单文件上传，用角色下拉区分
+      $("docRoleRow").style.display=v==="exam"?"block":"none";
+      $("tplRow").style.display="none";
+    }else{
+      // 独立模式：双文件槽
+      $("tplRow").style.display=v==="exam"?"block":"none";
+      $("docRoleRow").style.display="none";
+    }
   }
 });
 
