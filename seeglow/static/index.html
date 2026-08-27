@@ -618,7 +618,7 @@ async function doActivate(kind){
         body:JSON.stringify(body)});
       const d=await r.json();
       if(d.ok){saveLicense({kind:d.kind,uid:d.uid,expiry:d.expiry,sig:d.sig});
-        m.innerHTML=`激活成功！有效期至 ${d.expiry}。<br>💡 这张激活码可在手机/电脑等多台设备使用，请妥善保存。`;
+        m.innerHTML=`激活成功！${d.expiry>="9000"?"永久有效":("有效期至 "+d.expiry)}。<br>💡 这张激活码可在手机/电脑等多台设备使用，请妥善保存。`;
         m.style.color="#15803d";
         setTimeout(()=>{actDlg.close();location.reload()},1600)}
       else{m.textContent=d.error||"激活失败";m.style.color="var(--err)"}
@@ -1207,7 +1207,8 @@ askCard.addEventListener("drop",e=>{
       loadLicense();
       const s=await checkLicense();
       if(s.licensed){
-        $("pubBanner").innerHTML=`✅ 已激活 · 有效期至 ${s.expiry} · 官方 API 已就绪`;
+        const expTxt = s.expiry>="9000" ? "永久" : s.expiry;
+        $("pubBanner").innerHTML=`✅ 已激活 · ${expTxt} · 官方 API 已就绪`;
         $("pubBanner").style.background="#f0fdf4";$("pubBanner").style.borderColor="#bbf7d0";$("pubBanner").style.color="#15803d";
       }
     }
