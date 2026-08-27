@@ -1,11 +1,21 @@
-"""本地 Web 服务：FastAPI + 单页前端。"""
+"""Web 服务：FastAPI + 单页前端。
+
+两种运行模式：
+- 私有模式（默认）：本机自用，配置存 config.json，笔记落盘 可直接读历史
+- 公共模式（SEELOW_PUBLIC=1）：部署到服务器供多设备/他人使用，自带凭据（BYOK）、
+  笔记按任务令牌隔离、每 IP 限流、并发与批量上限
+"""
 
 import json as _json
+import os
+import threading
 import time
+import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -14,6 +24,128 @@ from .config import PRESETS, load_config, save_config
 
 app = FastAPI(title="SeeGlow API")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+# ---------------- 网站版付费模式（服务器内置官方 API，赞助/激活码解锁） ----------------
+# SEELOW_SITE_PAID=1 时启用：未激活访客所有总结类接口返回 402；
+# 已激活访客（票据在请求头）免 Key 使用服务端配置的官方 API。
+SITE_PAID_MODE = os.getenv("SEELOW_SITE_PAID", "") in ("1", "true", "on", "yes")
+
+def _auth(request: Request) -> dict | None:
+    if not SITE_PAID_MODE:
+        return {"kind": "open"}
+    from . import pro_web
+    return pro_web.check_request_auth(request)
+
+# ---------------- 公共模式开关与限额 ----------------
+PUBLIC_MODE = os.getenv("SEELOW_PUBLIC", "") in ("1", "true", "on", "yes")
+
+MAX_CONCURRENT = int(os.getenv("SEELOW_MAX_CONCURRENT", "2"))   # 全局同时任务数
+RATE_PER_IP = int(os.getenv("SEELOW_RATE_PER_IP", "10"))        # 每 IP 每 10 分钟启动数
+RATE_WINDOW = 600
+MAX_BATCH_PUBLIC = 6                                            # 公共模式单批上限
+UPLOAD_LIMIT = 200 * 1024 * 1024                                # 公共模式上传上限 200MB
+
+# 任务令牌：task_id -> token；公共模式下笔记/问答等只放行持票人
+_task_tokens: dict = {}
+_lock = threading.Lock()
+
+_rate: dict = {}
+
+
+def client_ip(request: Request) -> str:
+    xf = request.headers.get("x-forwarded-for", "")
+    return xf.split(",")[0].strip() or (request.client.host if request.client else "?")
+
+
+def rate_hit(ip: str) -> bool:
+    """True = 超限。滑动窗口计数。"""
+    now = time.time()
+    hits = [t for t in _rate.get(ip, []) if now - t < RATE_WINDOW]
+    over = len(hits) >= RATE_PER_IP
+    if not over:
+        hits.append(now)
+        _rate[ip] = hits
+    return over
+
+
+def running_count() -> int:
+    return tasks.running_count()
+
+
+def new_token() -> str:
+    return uuid.uuid4().hex[:20]
+
+
+def issue_task_token(tid: str, request: Optional[Request] = None) -> str:
+    """创建任务后签发访问令牌。公共模式下读写该任务的产物都必须带令牌。"""
+    tok = new_token()
+    ip = client_ip(request) if request else ""
+    with _lock:
+        _task_tokens[tid] = {"token": tok, "ip": ip, "created": time.time()}
+    # 过期令牌清理（48h）
+    cutoff = time.time() - 172800
+    stale = [k for k, v in _task_tokens.items() if v.get("created", 0) < cutoff]
+    for k in stale:
+        _task_tokens.pop(k, None)
+    return tok
+
+
+def check_task_access(tid: str, token: str, request: Request):
+    """校验“这个 IP 能否读这个任务”。通过返回令牌记录，否则抛 403/404。"""
+    with _lock:
+        rec = _task_tokens.get(tid)
+    if not rec:
+        raise HTTPException(404, "任务不存在")
+    if not PUBLIC_MODE:
+        return rec  # 私有模式：本机自用不设防
+    if rec["token"] and token == rec["token"]:
+        return rec
+    if rec.get("ip") and rec["ip"] == client_ip(request):
+        return rec
+    raise HTTPException(403, "无权访问该任务的结果")
+
+
+# 凭据注入白名单：公共模式下请求可携带自己的 API 信息覆盖服务端配置
+CRED_FIELDS = {"api_base", "api_key", "model", "temperature"}
+
+
+def resolve_run_cfg(cred: Optional[dict], auth: dict | None) -> dict:
+    """决定本次流水线用哪套 API 配置：
+    - 付费模式且已激活 → 服务端官方配置（访客无需 Key）
+    - 其余 → 用户自带凭据（BYOK）或服务器配置
+    """
+    base_cfg = load_config()
+    if SITE_PAID_MODE and auth:
+        return base_cfg  # 官方代答
+    return merge_cred(base_cfg, cred)
+
+
+def merge_cred(cfg: dict, cred: Optional[dict]) -> dict:
+    """BYOK：把用户自带的 API 凭据合并进服务端配置（仅白名单字段）。"""
+    if not cred:
+        return cfg
+    out = dict(cfg)
+    for k in CRED_FIELDS:
+        v = cred.get(k)
+        if k == "temperature":
+            if isinstance(v, (int, float)) and 0 <= float(v) <= 1:
+                out[k] = float(v)
+        elif isinstance(v, str) and v.strip():
+            out[k] = v.strip()
+    return out
+
+
+def require_paid(request: Request) -> dict:
+    """付费模式：校验授权票据。未激活返回 402（前端弹赞助/激活窗）。"""
+    if not SITE_PAID_MODE:
+        return {"kind": "open"}
+    auth = _auth(request)
+    if auth is None:
+        raise HTTPException(
+            402,
+            "本站由服务器官方 API 代答，需赞助解锁：爱发电 ¥29.9/月，或使用作者发的激活码",
+        )
+    return auth
 
 
 class ParseReq(BaseModel):
@@ -25,11 +157,13 @@ class StartReq(BaseModel):
     page: Optional[int] = None
     all_pages: bool = False
     style: Optional[str] = "general"
+    cred: Optional[dict] = None  # 公共模式：用户自带 API 凭据（可选）
 
 
 class BatchReq(BaseModel):
     items: list  # [{"bvid":..., "title":...}]
     style: Optional[str] = "general"
+    cred: Optional[dict] = None
 
 
 class FeedReq(BaseModel):
@@ -45,6 +179,7 @@ class ConfigReq(BaseModel):
     temperature: Optional[float] = None
     sessdata: Optional[str] = None
     output_dir: Optional[str] = None
+    vision: Optional[bool] = None
 
 
 @app.get("/")
@@ -99,10 +234,23 @@ def parse_video(req: ParseReq):
 
 
 @app.post("/api/start")
-def start(req: StartReq):
+def start(req: StartReq, request: Request):
     if not req.url.strip():
         raise HTTPException(400, "请输入视频链接")
+    auth = require_paid(request)
+    if PUBLIC_MODE:
+        ip = client_ip(request)
+        if running_count() >= MAX_CONCURRENT:
+            raise HTTPException(429, f"当前有 {running_count()} 个任务进行中（上限 {MAX_CONCURRENT}），请稍后再试")
+        if rate_hit(ip):
+            raise HTTPException(429, "启动过于频繁，请 10 分钟后再试")
+        cfg = resolve_run_cfg(req.cred, auth)
+        if not SITE_PAID_MODE and not (cfg.get("api_key") and cfg.get("model")):
+            raise HTTPException(400, "本站未提供公共 API Key，请在「设置」里填入你自己的 API 地址与 Key（仅保存在你的浏览器本地）")
+    else:
+        cfg = load_config()
     tid = tasks.create_task()
+    issue_task_token(tid, request)
 
     def job(progress_cb):
         return pipeline.run_pipeline(
@@ -110,6 +258,7 @@ def start(req: StartReq):
             {"page": req.page, "all_pages": req.all_pages, "style": req.style or "general"},
             progress_cb,
             stop_check=lambda: tasks.is_stopped(tid),
+            cfg_override=cfg,
         )
 
     tasks.run_in_background(tid, job)
@@ -117,17 +266,32 @@ def start(req: StartReq):
 
 
 @app.post("/api/start_batch")
-def start_batch(req: BatchReq):
-    """批量总结合集/收藏夹视频（上限 30 支）。"""
-    items = [i for i in (req.items or []) if i.get("bvid")][:30]
+def start_batch(req: BatchReq, request: Request):
+    """批量总结合集/收藏夹视频（私有上限 30 支，公共模式 6 支）。"""
+    auth = require_paid(request)
+    cap = MAX_BATCH_PUBLIC if PUBLIC_MODE else 30
+    items = [i for i in (req.items or []) if i.get("bvid")][:cap]
     if not items:
         raise HTTPException(400, "批量列表为空")
+    if PUBLIC_MODE:
+        ip = client_ip(request)
+        if running_count() >= MAX_CONCURRENT:
+            raise HTTPException(429, f"当前有 {running_count()} 个任务进行中（上限 {MAX_CONCURRENT}），请稍后再试")
+        if rate_hit(ip):
+            raise HTTPException(429, "启动过于频繁，请 10 分钟后再试")
+        cfg = resolve_run_cfg(req.cred, auth)
+        if not SITE_PAID_MODE and not (cfg.get("api_key") and cfg.get("model")):
+            raise HTTPException(400, "本站未提供公共 API Key，请在「设置」里填入你自己的 API 地址与 Key（仅保存在你的浏览器本地）")
+    else:
+        cfg = load_config()
     tid = tasks.create_task()
+    issue_task_token(tid, request)
 
     def job(progress_cb):
         return pipeline.run_batch_pipeline(
             items, req.style or "general", progress_cb,
             stop_check=lambda: tasks.is_stopped(tid),
+            cfg_override=cfg,
         )
 
     tasks.run_in_background(tid, job)
@@ -135,11 +299,26 @@ def start_batch(req: BatchReq):
 
 
 @app.post("/api/start_file")
-async def start_file(file: UploadFile = File(...), style: str = Form("general")):
+async def start_file(request: Request, file: UploadFile = File(...), style: str = Form("general"),
+                     api_base: str = Form(""), api_key: str = Form(""), model: str = Form("")):
     """总结本地音视频文件（拖拽/选择上传，存临时目录，用完即删）。"""
     import os as _os
     import tempfile as _tf
 
+    auth = require_paid(request)
+    if PUBLIC_MODE:
+        ip = client_ip(request)
+        if running_count() >= MAX_CONCURRENT:
+            raise HTTPException(429, f"当前有 {running_count()} 个任务进行中（上限 {MAX_CONCURRENT}），请稍后再试")
+        if rate_hit(ip):
+            raise HTTPException(429, "启动过于频繁，请 10 分钟后再试")
+        cfg = resolve_run_cfg({"api_base": api_base, "api_key": api_key, "model": model}, auth)
+        if not SITE_PAID_MODE and not (cfg.get("api_key") and cfg.get("model")):
+            raise HTTPException(400, "本站未提供公共 API Key，请在「设置」里填入你自己的 API 地址与 Key")
+    else:
+        cfg = load_config()
+
+    limit = UPLOAD_LIMIT if PUBLIC_MODE else 4 * 1024 * 1024 * 1024
     suffix = "." + (file.filename or "x").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
     if suffix and suffix not in {".mp4", ".mkv", ".flv", ".mov", ".avi", ".webm",
                                  ".mp3", ".m4a", ".wav", ".flac", ".aac", ".ogg", ".m4s", ".ts"}:
@@ -153,8 +332,8 @@ async def start_file(file: UploadFile = File(...), style: str = Form("general"))
                 if not chunk:
                     break
                 size += len(chunk)
-                if size > 4 * 1024 * 1024 * 1024:
-                    raise HTTPException(400, "文件超过 4GB 上限")
+                if size > limit:
+                    raise HTTPException(400, f"文件超过 {limit // (1024*1024)}MB 上限")
                 f.write(chunk)
         if size == 0:
             raise HTTPException(400, "文件为空")
@@ -163,11 +342,13 @@ async def start_file(file: UploadFile = File(...), style: str = Form("general"))
 
     title = (file.filename or "本地文件").rsplit(".", 1)[0]
     tid = tasks.create_task()
+    issue_task_token(tid, request)
 
     def job(progress_cb):
         try:
             return pipeline.run_file_pipeline(dest, title, style, progress_cb,
-                                              stop_check=lambda: tasks.is_stopped(tid))
+                                              stop_check=lambda: tasks.is_stopped(tid),
+                                              cfg_override=cfg)
         finally:
             try:
                 dest.unlink()
@@ -232,31 +413,58 @@ def feed_check(req: FeedReq):
 
 
 @app.get("/api/task/{tid}")
-def task_status(tid: str):
+def task_status(tid: str, request: Request, token: str = Query("")):
+    if PUBLIC_MODE:
+        check_task_access(tid, token, request)
     t = tasks.get_task(tid)
     if not t:
         raise HTTPException(404, "任务不存在")
+    # 公共模式下任务完成后结果只给持票人（文件名可当凭据换阅，不回传全文重复消耗）
     return t
 
 
 @app.post("/api/stop/{tid}")
-def stop_task(tid: str):
+def stop_task(tid: str, request: Request, token: str = Query("")):
+    if PUBLIC_MODE:
+        check_task_access(tid, token, request)
     tasks.request_stop(tid)
     return {"ok": True}
+
+
+def _check_file_access(fname: str, request: Request, token: str = ""):
+    """公共模式：校验请求者对该笔记文件的访问权（按创建任务的 IP 或令牌）。"""
+    if not PUBLIC_MODE:
+        return
+    with _lock:
+        recs = list(_task_tokens.values())
+    ip = client_ip(request)
+    for r in recs:
+        if token and r.get("token") == token:
+            return
+        if r.get("ip") and r.get("ip") == ip:
+            return
+    raise HTTPException(403, "请从发起总结的设备访问（或携带任务令牌）")
 
 
 class AskReq(BaseModel):
     file: str
     question: str
     history: Optional[list] = None
+    token: Optional[str] = None   # 公共模式：任务访问令牌
+    cred: Optional[dict] = None
 
 
 @app.post("/api/ask")
-def ask(req: AskReq):
+def ask(req: AskReq, request: Request):
     """基于已保存的视频上下文回答问题（引用时间点）。"""
     import json as _json
 
     from .summarize import LLMClient
+
+    if PUBLIC_MODE:
+        # 笔记文件名 <-> 任务令牌 的归属校验（同一 IP 或持令牌者可问）
+        _check_file_access(req.file, request, req.token)
+    require_paid(request)
 
     q = (req.question or "").strip()
     if not q:
@@ -295,7 +503,7 @@ def ask(req: AskReq):
     chosen.sort()  # 按时间字符串顺序（mm:ss 字典序即可）
     context = "\n".join(chosen)
 
-    cfg = load_config()
+    cfg = resolve_run_cfg(req.cred, _auth(request))
     client = LLMClient(
         cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"), cfg.get("temperature", 0.3)
     )
@@ -325,6 +533,8 @@ def ask(req: AskReq):
 class CardsReq(BaseModel):
     file: str
     count: Optional[int] = 10
+    token: Optional[str] = None
+    cred: Optional[dict] = None
 
 
 class SaveExportReq(BaseModel):
@@ -356,7 +566,12 @@ def _native_save_dialog(default_name: str, title: str = "保存文件"):
 
 @app.post("/api/save_export")
 def save_export(req: SaveExportReq):
-    """桌面版导出：弹系统保存对话框直接写盘（绕开 WebView 的下载限制）。"""
+    """桌面版导出：弹系统保存对话框直接写盘（绕开 WebView 的下载限制）。
+
+    服务器/容器等无桌面环境返回 cancelled，前端自动回退浏览器下载。
+    """
+    if PUBLIC_MODE:
+        return {"ok": False, "cancelled": True}
     name = (req.name or "seeglow.txt").strip() or "seeglow.txt"
     path = _native_save_dialog(name, req.title or "保存文件")
     if not path:
@@ -373,6 +588,8 @@ def save_export(req: SaveExportReq):
 class RewriteReq(BaseModel):
     file: str
     target: str  # xiaohongshu / gongzhonghao / weibo / zhihu
+    token: Optional[str] = None
+    cred: Optional[dict] = None
 
 
 REWRITE_GUIDES = {
@@ -409,10 +626,13 @@ REWRITE_GUIDES = {
 
 
 @app.post("/api/rewrite")
-def rewrite(req: RewriteReq):
+def rewrite(req: RewriteReq, request: Request):
     """把已保存的视频笔记改写成平台文案（小红书/公众号/微博/知乎）。"""
     from .summarize import LLMClient
 
+    if PUBLIC_MODE:
+        _check_file_access(req.file, request, req.token)
+    require_paid(request)
     guide = REWRITE_GUIDES.get(req.target)
     if not guide:
         raise HTTPException(400, f"不支持的改写目标：{req.target}")
@@ -424,7 +644,7 @@ def rewrite(req: RewriteReq):
         raise HTTPException(404, "未找到该笔记")
     summary = md_path.read_text(encoding="utf-8")[:8000]
 
-    cfg = load_config()
+    cfg = resolve_run_cfg(req.cred, _auth(request))
     client = LLMClient(cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"),
                        cfg.get("temperature", 0.3))
     prompt = f"{guide}\n\n【视频笔记】\n{summary}"
@@ -453,8 +673,10 @@ def _fmt_vtt_ts(sec: float) -> str:
 
 
 @app.get("/api/export_srt")
-def export_srt(name: str = Query(...), fmt: str = Query("srt")):
+def export_srt(request: Request, name: str = Query(...), fmt: str = Query("srt"), token: str = Query("")):
     """导出该笔记的视频字幕（仅「B站字幕」来源的笔记有完整字幕）。"""
+    if PUBLIC_MODE:
+        _check_file_access(name, request, token)
     base = _output_dir().resolve()
     fname = name if name.endswith(".md") else name + ".md"
     ctx_path = (base / (fname + ".ctx.json")).resolve()
@@ -478,10 +700,13 @@ def export_srt(name: str = Query(...), fmt: str = Query("srt")):
 
 
 @app.post("/api/flashcards")
-def flashcards(req: CardsReq):
+def flashcards(req: CardsReq, request: Request):
     """从已保存的视频笔记生成 Anki 闪卡（Q&A 对）。"""
     from .summarize import LLMClient
 
+    if PUBLIC_MODE:
+        _check_file_access(req.file, request, req.token)
+    require_paid(request)
     base = _output_dir().resolve()
     fname = req.file if req.file.endswith(".md") else req.file + ".md"
     md_path = (base / fname).resolve()
@@ -496,7 +721,7 @@ def flashcards(req: CardsReq):
             f"[{it.get('start', 0):.0f}s] {str(it.get('text', ''))[:200]}" for it in items[:60]
         )[:8000]
 
-    cfg = load_config()
+    cfg = resolve_run_cfg(req.cred, _auth(request))
     client = LLMClient(cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"),
                        cfg.get("temperature", 0.3))
     prompt = (
@@ -529,7 +754,10 @@ def _output_dir() -> Path:
 
 
 @app.get("/api/history")
-def history():
+def history(request: Request):
+    """私有模式：本机历史列表。公共模式：不暴露别人的笔记列表，返回空。"""
+    if PUBLIC_MODE:
+        return []
     out = []
     for f in sorted(_output_dir().glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
         st = f.stat()
@@ -538,7 +766,9 @@ def history():
 
 
 @app.get("/api/output")
-def read_output(name: str = Query(...)):
+def read_output(request: Request, name: str = Query(...), token: str = Query("")):
+    if PUBLIC_MODE:
+        _check_file_access(name, request, token)
     base = _output_dir().resolve()
     path = (base / name).resolve()
     if path.parent != base or path.suffix != ".md" or not path.exists():
@@ -564,17 +794,40 @@ def _mask_key(key: str) -> str:
 
 
 @app.get("/api/config")
-def get_config():
+def get_config(request: Request):
     cfg = load_config()
+    if SITE_PAID_MODE:
+        # 网站付费模式：服务器内置官方 API，前端不再要求 BYOK；激活状态由浏览器票据决定
+        return {
+            "public": True,
+            "site_paid": True,
+            "presets": PRESETS,
+            "config": {"public": True, "site_paid": True, "vision": bool(cfg.get("vision"))},
+            "afdian_url": "https://afdian.com/a/Orisyan",
+            "plan_price": float(os.getenv("SEEGLOW_PLAN_PRICE", "29.9")),
+        }
     cfg["api_key_masked"] = _mask_key(cfg.get("api_key", ""))
     cfg.pop("api_key", None)
     cfg.pop("sessdata", None)
-    cfg["has_sessdata"] = bool(load_config().get("sessdata"))
+    cfg["has_sessdata"] = bool(cfg.get("sessdata"))
+    if PUBLIC_MODE:
+        # 公共模式：不下发服务端配置，前端改用浏览器本地凭据（BYOK）
+        return {
+            "public": True,
+            "presets": PRESETS,
+            "config": {
+                "public": True,
+                "server_has_key": bool(load_config().get("api_key")),
+                "vision": bool(cfg.get("vision")),
+            },
+        }
     return {"config": cfg, "presets": PRESETS}
 
 
 @app.post("/api/config")
 def update_config(req: ConfigReq):
+    if PUBLIC_MODE:
+        raise HTTPException(403, "公共模式：API 配置仅保存在你自己设备的浏览器里，无法修改服务器配置")
     update = {k: v for k, v in req.model_dump().items() if v not in (None, "")}
     # 空字符串的 api_key/sessdata 表示“保持不变”，避免误清空
     if req.api_key == "":
@@ -587,6 +840,79 @@ def update_config(req: ConfigReq):
     cfg.pop("api_key", None)
     cfg.pop("sessdata", None)
     return cfg
+
+
+# ---------------- 网站版激活（爱发电订单 / 作者激活码） ----------------
+
+class SiteOrderReq(BaseModel):
+    order_no: str
+    device: str
+
+
+class SiteCodeReq(BaseModel):
+    code: str
+    device: str
+
+
+@app.post("/api/pro/order")
+def site_order(req: SiteOrderReq):
+    """爱发电订单号在线验证 → 签发浏览器票据。"""
+    if not SITE_PAID_MODE:
+        raise HTTPException(404, "未启用付费模式")
+    from . import pro_web
+
+    if not req.order_no.strip():
+        raise HTTPException(400, "请输入赞助订单号")
+    dev = pro_web.normalize_device(req.device)
+    # 简单防爆破：全局每分钟最多 10 次订单验证
+    now = time.time()
+    hits = [t for t in getattr(site_order, "_hits", []) if now - t < 60]
+    if len(hits) >= 10:
+        raise HTTPException(429, "尝试过于频繁，请稍后再试")
+    site_order._hits = hits + [now]
+
+    o = pro_web.query_order(req.order_no.strip())
+    if o is None:
+        return {"ok": False, "error": "未找到该订单。请确认订单号复制自「我的订单」，且已在 afdian.com/a/Orisyan 赞助；若网络异常可改用激活码"}
+    amount = pro_web.order_amount_yuan(o)
+    if amount < pro_web.PLAN_PRICE:
+        return {"ok": False, "error": f"该订单金额（¥{amount:.2f}）未达到 ¥{pro_web.PLAN_PRICE:g}/月 档位门槛"}
+    months = max(int(o.get("month") or 1), 1)
+    expiry = (datetime.now() + timedelta(days=pro_web.PLAN_DAYS * months)).strftime("%Y-%m-%d")
+    bound = pro_web._bound_devices("bind:" + req.order_no.strip())
+    if dev not in bound:
+        if len(bound) >= pro_web.MAX_MACHINES:
+            return {"ok": False, "error": "该订阅已绑定 3 台设备上限，如需更换设备请联系作者"}
+        pro_web._remember_device("bind:" + req.order_no.strip(), dev)
+    uid = req.order_no.strip()
+    ticket = pro_web.make_ticket(uid, expiry, "afdian")
+    return {"ok": True, **ticket}
+
+
+@app.post("/api/pro/code")
+def site_code(req: SiteCodeReq):
+    """作者签发的激活码激活（无需爱发电赞助）。"""
+    if not SITE_PAID_MODE:
+        raise HTTPException(404, "未启用付费模式")
+    from . import pro_web
+
+    try:
+        expiry = pro_web.parse_web_code(req.code, pro_web.normalize_device(req.device))
+    except HTTPException as e:
+        return {"ok": False, "error": e.detail}
+    ticket = pro_web.make_ticket("WEB-" + pro_web.normalize_device(req.device)[:12].upper(), expiry, "code")
+    return {"ok": True, **ticket}
+
+
+@app.get("/api/pro/status")
+def site_status(request: Request):
+    """前端启动时探测：是否付费模式 + 本机票据是否有效。"""
+    if not SITE_PAID_MODE:
+        return {"site_paid": False}
+    from . import pro_web
+
+    auth = pro_web.check_request_auth(request)
+    return {"site_paid": True, "licensed": bool(auth), "expiry": (auth or {}).get("expiry", "")}
 
 
 def _disable_quick_edit():
@@ -615,4 +941,6 @@ def main(host="127.0.0.1", port=8765):
     import uvicorn
 
     _disable_quick_edit()
+    if PUBLIC_MODE and host in ("127.0.0.1", "localhost"):
+        host = "0.0.0.0"  # 公共模式必须监听外网卡
     uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False)
