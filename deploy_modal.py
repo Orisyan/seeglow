@@ -17,7 +17,7 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("fastapi>=0.100", "uvicorn>=0.20", "pydantic>=2.0",
                  "requests>=2.28", "av>=12.0", "numpy>=1.24",
-                 "python-multipart>=0.0.9")
+                 "python-multipart>=0.0.9", "PyMuPDF>=1.24")
     .env({
         "SEELOW_PUBLIC": "1",
         # 网站付费模式：服务器内置官方 API（Key 走 Modal Secret），赞助/激活码解锁
