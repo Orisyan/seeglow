@@ -180,6 +180,25 @@ def get_audio_url(bvid: str, cid: int, sessdata="") -> str:
     return url
 
 
+def get_video_url(bvid: str, cid: int, sessdata="") -> str:
+    """取最低分辨率的视频流地址。供「画面理解」抽帧看题目/PPT，只读画面文字无需高清。"""
+    d = _get(
+        "https://api.bilibili.com/x/player/playurl",
+        {"bvid": bvid, "cid": cid, "fnval": 16, "fnver": 0, "fourk": 1},
+        sessdata,
+    )
+    dash = d.get("dash") or {}
+    videos = [v for v in (dash.get("video") or []) if isinstance(v, dict)]
+    if not videos:
+        raise BilibiliError("未取到视频流地址")
+    # 分辨率最低优先；同分辨率取码率最低
+    best = min(videos, key=lambda v: ((v.get("height") or 9999), v.get("bandwidth", 0)))
+    url = best.get("baseUrl") or best.get("base_url") or ""
+    if not url:
+        raise BilibiliError("视频流地址为空")
+    return url
+
+
 def download_audio(url, dest: Path, sessdata="", progress_cb=None, stop_check=None) -> Path:
     headers = dict(BASE_HEADERS)
     if sessdata:
