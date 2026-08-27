@@ -17,10 +17,10 @@ body{background:var(--bg);color:var(--ink);
 .wrap{max-width:1080px;margin:0 auto;padding:0 24px 80px}
 
 /* header */
-header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;margin-bottom:34px}
+header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;margin-bottom:34px;flex-wrap:wrap;gap:12px}
 .logo{display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
-.logo .name{font-size:20px;font-weight:700;letter-spacing:.04em;line-height:1.15}
-.logo .en{font-size:10.5px;letter-spacing:.3em;color:var(--sub)}
+.logo .name{font-size:20px;font-weight:700;letter-spacing:.04em;line-height:1.2}
+.logo .slogan{font-size:11.5px;color:var(--sub);letter-spacing:.06em}
 .btn-chip{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:8px 20px;font-size:13.5px;color:var(--sub);cursor:pointer;font-family:inherit;transition:.15s}
 .btn-chip:hover{color:var(--ink);border-color:#c4c4c8}
 .btn-chip.warn{color:#b45309;border-color:#fcd34d;background:#fffbeb}
@@ -97,8 +97,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .md summary:hover{color:var(--ink)}
 
 /* aside */
-aside{position:sticky;top:20px;align-self:start}
-.side-card{padding:20px}
+aside{position:sticky;top:20px;align-self:start}.side-card{padding:20px}
 .cap{font-size:12px;font-weight:600;letter-spacing:.18em;color:var(--sub);margin-bottom:12px}
 .h-item{padding:9px 11px;margin:0 -11px;border-radius:10px;cursor:pointer;transition:background .15s}
 .h-item:hover{background:var(--hover)}
@@ -154,6 +153,31 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
   .quiz-q blockquote.ans{display:block!important}
   h2{page-break-after:avoid}
 }
+/* ---------- 移动端适配（手机/平板） ---------- */
+@media(max-width:640px){
+  body{font-size:14.5px}
+  .wrap{padding:0 12px 60px}
+  header{padding:14px 0;margin-bottom:20px}
+  .ask-card{padding:18px 16px}
+  .ask{flex-direction:column}
+  .ask input{width:100%}
+  .ask .go{padding:12px;width:100%}
+  .hint{flex-direction:column;align-items:stretch;gap:10px}
+  .hint>span:last-child{justify-content:space-between;flex-wrap:wrap;gap:8px}
+  .card.result,.qa{padding:18px 16px}
+  .rhead{flex-direction:column}
+  .acts{width:100%;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+  .acts button{white-space:nowrap;flex-shrink:0}
+  .md{font-size:14px}
+  .qrow{flex-direction:column}
+  .qrow button{padding:11px}
+  dialog{padding:22px 18px;width:min(480px,94vw)}
+  #dmStrip{height:20px}
+}
+/* 公共模式提示条 */
+.pub-banner{display:none;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;
+  border-radius:12px;padding:10px 16px;font-size:13px;line-height:1.7;margin-bottom:16px}
+
 </style>
 </head>
 <body>
@@ -170,8 +194,8 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
         <line x1="10.5" y1="25" x2="25.5" y2="25" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
       </svg>
       <span>
-        <span class="name">拾光</span><br>
-        <span class="en">S E E G L O W</span>
+        <span class="name">拾光 SeeGlow</span><br>
+        <span class="slogan">让长视频，一眼见光</span>
       </span>
     </a>
     <span style="display:flex;gap:10px;align-items:center">
@@ -183,6 +207,10 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 
   <div class="grid">
     <main>
+      <div class="pub-banner" id="pubBanner">
+        📱 公共演示站 · API 凭据仅保存在<b>你自己设备</b>的浏览器里，不会上传；
+        总结结果默认只对创建它的设备可见。请自备硅基流动 / OpenAI 等支持的 API Key。
+      </div>
       <div class="card ask-card">
         <div class="ask" id="askRow">
           <input id="url" placeholder="粘贴 B 站视频链接或 BV 号，一键生成总结笔记" autocomplete="off"
@@ -230,7 +258,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
           <div class="row"><span class="stage" id="stageLabel">准备中…</span><span class="pct" id="pPct">0%</span></div>
           <div class="bar"><i id="barFill"></i></div>
           <div class="msg" id="pMsg"></div>
-          <button class="stop" onclick="stopTask()">取消任务</button>
+          <button class="stop" id="stopBtn" onclick="stopTask()">取消任务</button>
         </div>
 
         <div class="err" id="errBox"></div>
@@ -274,7 +302,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
     </main>
 
     <aside>
-      <div class="card side-card">
+      <div class="card side-card" id="historyCard">
         <div class="cap">历 史 记 录</div>
         <div id="historyList"><div class="empty">暂无记录</div></div>
       </div>
@@ -284,7 +312,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 
 <dialog id="actDlg">
   <h3 id="actTitle">激活拾光</h3>
-  <div class="frow"><label>本机机器码（发私信给作者可获取激活码）</label>
+  <div class="frow" id="actMcRow"><label>本机机器码（发私信给作者可获取激活码）</label>
     <div style="display:flex;gap:8px">
       <input id="actMc" readonly style="flex:1;font-family:Consolas,monospace;letter-spacing:.08em;background:var(--hover)">
       <button type="button" onclick="copyMc()" style="flex-shrink:0;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:6px 16px;font-size:12.5px;color:var(--sub);cursor:pointer;font-family:inherit">复制</button>
@@ -303,7 +331,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
     <button onclick="actDlg.close()">关闭</button>
     <button class="pri" id="actBtn" onclick="doActivate('code')">激 活</button>
   </div>
-  <div class="note" style="margin-top:18px">赞助 ¥9.9/月起 · <a href="https://afdian.com/a/Orisyan" target="_blank" style="color:#c2620a">爱发电主页</a> · 每天免费 3 次（次日自动恢复）</div>
+  <div class="note" style="margin-top:18px">赞助 ¥29.9/月起 · <a href="https://afdian.com/a/Orisyan" target="_blank" style="color:#c2620a">爱发电主页</a> · 订单号在线秒激活，也可私信获取激活码</div>
 </dialog>
 
 <dialog id="rewriteDlg">
@@ -344,6 +372,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 
 <dialog id="settingsDlg">
   <h3>设置</h3>
+  <div id="setHint" style="font-size:12.5px;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:8px 12px;margin-bottom:14px;display:none"></div>
   <div class="frow"><label>服务商预设（自动填好地址与推荐模型）</label>
     <select id="cfg_provider" onchange="applyPreset()">
       <option value="siliconflow">硅基流动（国内快，推荐）</option>
@@ -360,6 +389,16 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
     <input id="cfg_temperature" type="number" step="0.1" min="0" max="1" value="0.3"></div>
   <div class="frow"><label>B站 Cookie SESSDATA（可选；当前 <span id="sdNow">未配置</span>）</label>
     <input id="cfg_sessdata" type="password" placeholder="留空不修改"></div>
+  <div class="frow">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ink);font-size:13.5px">
+      <input id="cfg_vision" type="checkbox" style="width:auto;flex-shrink:0">
+      <span>画面理解：AI 同时「看」视频画面</span>
+    </label>
+    <div style="font-size:11.5px;color:#a1a1aa;margin-top:5px;line-height:1.6">
+      适合速成课、教程等有板书/题目的视频：逐字转写屏幕上的题目、选项、公式与板书。
+      需模型支持图片输入（Qwen3-Omni 支持）；仅在无字幕视频（AI 直听）时生效，更耗 token。
+    </div>
+  </div>
   <div class="dlg-foot">
     <button onclick="settingsDlg.close()">取消</button>
     <button class="pri" onclick="saveSettings()">保存设置</button>
@@ -447,12 +486,74 @@ function mdRender(src){
   return tsLinkify(out.join("\n"));
 }
 
+/* ---------- 本地凭据（公共模式 BYOK） ---------- */
+let PUBLIC_MODE=false;
+/* ---------- 网站付费模式（官方 API 代答 + 爱发电/激活码解锁） ---------- */
+let SITE_PAID=false, LICENSE={}, DEVICE_ID="";
+function deviceId(){
+  if(DEVICE_ID)return DEVICE_ID;
+  // 浏览器稳定指纹：UA + 屏幕特征 + 随机种子（首访生成后持久化）
+  let seed=localStorage.getItem("seeglowDeviceSeed");
+  if(!seed){seed=Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem("seeglowDeviceSeed",seed)}
+  const raw=[navigator.userAgent,screen.width+"x"+screen.height+":"+screen.colorDepth,seed].join("|");
+  let h=0;for(let i=0;i<raw.length;i++){h=(h*31+raw.charCodeAt(i))>>>0}
+  DEVICE_ID="W-"+h.toString(36).toUpperCase()+"-"+(seed.length%97).toString(36).toUpperCase();
+  return DEVICE_ID;
+}
+function loadLicense(){try{LICENSE=JSON.parse(localStorage.getItem("seeglowTicket")||"{}")}catch(e){LICENSE={}}return LICENSE}
+function saveLicense(t){localStorage.setItem("seeglowTicket",JSON.stringify(t));LICENSE=t}
+function authHeaders(extra){
+  const h=extra||{};
+  loadLicense();
+  if(SITE_PAID&&LICENSE.uid){
+    h["X-SeeGlow-Auth"]=JSON.stringify(LICENSE);
+    h["X-SeeGlow-Device"]=deviceId();
+  }
+  return h;
+}
+async function checkLicense(){
+  try{
+    const r=await fetch("/api/pro/status",{headers:authHeaders()});
+    return await r.json();
+  }catch(e){return {}}
+}
+
+function loadLocalCred(){
+  try{return JSON.parse(localStorage.getItem("seeglowCred")||"{}")}catch(e){return {}}
+}
+function saveLocalCred(c){
+  if(c.api_key)localStorage.setItem("seeglowCred",JSON.stringify(c));
+}
+function credPayload(){
+  // 公共模式：把本地凭据附到请求里（仅白名单字段）
+  if(!PUBLIC_MODE)return null;
+  const c=loadLocalCred();
+  if(!c.api_key)return null;
+  return {api_base:c.api_base||"",api_key:c.api_key,model:c.model||"",temperature:c.temperature};
+}
+
 async function api(path,opts){
+  opts=opts||{};
+  opts.headers=authHeaders(opts.headers);
   const r=await fetch(path,opts);
   if(!r.ok){let msg="请求失败 "+r.status;try{msg=(await r.json()).detail||msg}catch(e){}
-    if(r.status===402)openActivate(msg);  // 未激活/试用用尽 → 弹出页内激活窗
+    if(r.status===402){openActivate(msg);throw new Error(msg||"需要激活")}
+    if(r.status===401){dropLicense();openActivate(msg||"授权失效，请重新激活");throw new Error(msg)}
     throw new Error(msg)}
   return r.json();
+}
+
+function dropLicense(){localStorage.removeItem("seeglowTicket");LICENSE={}}
+
+function ensureCred(){
+  if(SITE_PAID)return true;   // 网站付费模式：官方 API 代答，无需 BYOK
+  if(!PUBLIC_MODE)return true;
+  const c=loadLocalCred();
+  if(c.api_key&&c.model)return true;
+  openSettings();
+  $("setHint").textContent="本站为公共部署：请填入你自己的 API 地址与 Key（只保存在此设备的浏览器里，发给服务器用于本次总结）。";
+  showErr("请先在「设置」中填写你自己的 API Key（保存在本机浏览器，不会存到服务器）");
+  return false;
 }
 
 /* ---------- 授权状态（开源版无此接口时自动隐藏） ---------- */
@@ -477,6 +578,14 @@ async function loadPro(){
   }
 }
 function openActivate(errMsg){
+  if(SITE_PAID){
+    // 网站付费模式：赞助/激活码解锁
+    $("actMc").value=deviceId();
+    if(errMsg){$("actMsg").textContent=errMsg;$("actMsg").style.color="var(--err)"}
+    else{$("actMsg").textContent="";$("actMsg").style.color=""}
+    actDlg.showModal();
+    return;
+  }
   if(!proState)return;               // 开源版：无授权体系，不弹
   $("actMc").value=proState.machine_code||"";
   if(proState.online)$("actOnlineRow").style.display="block";
@@ -495,8 +604,20 @@ async function doActivate(kind){
   const m=$("actMsg");
   const val=(kind==="order"?$("actOrder").value:$("actCode").value).trim();
   if(!val){m.textContent=kind==="order"?"请输入赞助订单号":"请输入激活码";m.style.color="var(--err)";return}
-  m.textContent="正在激活…";m.style.color="var(--sub)";
+  m.textContent="正在验证…";m.style.color="var(--sub)";
   try{
+    if(SITE_PAID){
+      // 网站版：走服务器激活接口，成功后保存票据
+      const ep=kind==="order"?"/api/pro/order":"/api/pro/code";
+      const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(kind==="order"?{order_no:val,device:deviceId()}:{code:val,device:deviceId()})});
+      const d=await r.json();
+      if(d.ok){saveLicense({kind:d.kind,uid:d.uid,expiry:d.expiry,sig:d.sig});
+        m.textContent=`激活成功！有效期至 ${d.expiry}`;m.style.color="#15803d";
+        setTimeout(()=>{actDlg.close();location.reload()},900)}
+      else{m.textContent=d.error||"激活失败";m.style.color="var(--err)"}
+      return;
+    }
     const ep=kind==="order"?"/api/pro/activate-afdian":"/api/pro/activate-code";
     const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({value:val})});
     const d=await r.json();
@@ -511,6 +632,7 @@ window.curVideo=null;
 async function start(){
   const url=$("url").value.trim();
   if(!url)return showErr("请先粘贴B站视频链接");
+  if(!ensureCred())return;
   showErr("");
   try{
     const info=await api("/api/parse",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
@@ -519,8 +641,7 @@ async function start(){
       showColPicker(info.collection.items,info.collection.title);
       return;
     }
-    lastParse=info;window.curVideo={bvid:info.bvid,page:1};
-    pickedUrl=url;
+    lastParse=info;window.curVideo={bvid:info.bvid,page:1};    pickedUrl=url;
     const ps=info.pages||[];
     const pk=$("pagePicker");
     pk.style.display="none";
@@ -570,9 +691,11 @@ async function startBatchFromPicker(){
   await runBatch(sel);
 }
 async function runBatch(items){
+  if(!ensureCred())return;
   try{
+    const body={items:items.map(v=>({bvid:v.bvid,title:v.title})),style:$("styleSel").value,cred:credPayload()};
     const d=await api("/api/start_batch",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({items:items.map(v=>({bvid:v.bvid,title:v.title})),style:$("styleSel").value})});
+      body:JSON.stringify(body)});
     window.curVideo=null;
     currentTask=d.task_id;
     $("resultCard").style.display="none";$("startBtn").disabled=true;
@@ -581,10 +704,13 @@ async function runBatch(items){
   }catch(e){showErr(e.message)}
 }
 async function uploadFile(file){
+  if(!ensureCred())return;
   showErr("");
   const fd=new FormData();
   fd.append("file",file);
   fd.append("style",$("styleSel").value);
+  const c=credPayload();
+  if(c){fd.append("api_base",c.api_base||"");fd.append("api_key",c.api_key);fd.append("model",c.model||"")}
   $("resultCard").style.display="none";$("startBtn").disabled=true;
   window.curVideo=null;
   setProgress({stage:"omni",percent:3,message:`上传「${file.name}」中…`});
@@ -601,13 +727,15 @@ async function uploadFile(file){
 }
 async function startRun(allPages){
   if(!pickedUrl)return;
+  if(!ensureCred())return;
   $("pagePicker").style.display="none";
   try{
-    const body={url:pickedUrl,style:$("styleSel").value};
+    const body={url:pickedUrl,style:$("styleSel").value,cred:credPayload()};
     if(!allPages)body.page=parseInt($("pageSel").value)||1;
     body.all_pages=!!allPages;
     const d=await api("/api/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     currentTask=d.task_id;
+    window.taskToken=d.token||"";
     if(body.page)window.curVideo={bvid:lastParse.bvid,page:body.page};
     loadPro();  // 试用消耗后刷新徽标
     $("resultCard").style.display="none";
@@ -620,14 +748,14 @@ async function startRun(allPages){
 async function poll(){
   if(!currentTask)return;
   try{
-    const t=await api("/api/task/"+currentTask);
+    const t=await api("/api/task/"+currentTask+(window.taskToken?("?token="+window.taskToken):""));
     setProgress(t);
     if(t.status==="done"){
-      clearInterval(pollTimer);currentTask=null;$("startBtn").disabled=false;
+      clearInterval(pollTimer);currentTask=null;$("startBtn").disabled=false;resetStopBtn();
       $("progressCard").style.display="none";
       showResult(t.result);
     }else if(t.status==="error"||t.status==="stopped"){
-      clearInterval(pollTimer);currentTask=null;$("startBtn").disabled=false;
+      clearInterval(pollTimer);currentTask=null;$("startBtn").disabled=false;resetStopBtn();
       $("progressCard").style.display="none";
       showErr((t.status==="stopped"?"已取消":"失败")+"："+(t.error||"未知错误"));
     }
@@ -815,7 +943,7 @@ async function makeFlashcards(){
   const btn=$("cardBtn");btn.disabled=true;btn.textContent="生成中…";
   try{
     const d=await api("/api/flashcards",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({file:lastFileName,count:10})});
+      body:JSON.stringify({file:lastFileName,count:10,token:window.taskToken||"",cred:credPayload()})});
     const tsv=d.cards.map(c=>`${c.q.replace(/\t|\n/g," ")}\t${c.a.replace(/\t|\n/g," ")}`).join("\n");
     const name=(lastFileName || "seeglow").replace(/\.md$/, "") + "-闪卡.txt";
     const r = await saveOrDownload(tsv, "text/plain;charset=utf-8", name, true);
@@ -835,7 +963,7 @@ async function doRewrite(){
   $("rwOut").value="";
   try{
     const d=await api("/api/rewrite",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({file:lastFileName,target:$("rwTarget").value})});
+      body:JSON.stringify({file:lastFileName,target:$("rwTarget").value,token:window.taskToken||"",cred:credPayload()})});
     $("rwOut").value=d.text;
     m.textContent="改写完成，可直接复制发布 ✦";
   }catch(e){m.textContent="失败："+e.message}
@@ -856,7 +984,8 @@ async function saveRewrite(){
 async function exportSRT(){
   if(!lastFileName)return alert("请先生成或打开一份笔记");
   try{
-    const d=await api("/api/export_srt?name="+encodeURIComponent(lastFileName));
+    const q=(window.taskToken?("&token="+encodeURIComponent(window.taskToken)):"");
+    const d=await api("/api/export_srt?name="+encodeURIComponent(lastFileName)+q);
     const r=await saveOrDownload(d.content,"text/plain;charset=utf-8",d.filename,true);
     if(r.saved)alert("字幕已保存：\n"+r.path);
   }catch(e){alert("导出失败："+e.message)}
@@ -903,7 +1032,16 @@ function showErr(msg){
   b.textContent=msg;b.style.display="block";
 }
 
-async function stopTask(){if(currentTask){await api("/api/stop/"+currentTask,{method:"POST"}).catch(()=>{})}}
+function resetStopBtn(){
+  const b=$("stopBtn");
+  if(b){b.disabled=false;b.textContent="取消任务"}
+}
+async function stopTask(){
+  if(!currentTask)return;
+  const b=$("stopBtn");
+  if(b){b.disabled=true;b.textContent="正在取消…"}
+  await api("/api/stop/"+currentTask+(window.taskToken?("?token="+window.taskToken):""),{method:"POST"}).catch(()=>{});
+}
 
 function copyResult(){navigator.clipboard.writeText(lastResult).then(()=>alert("已复制 Markdown"))}
 async function downloadResult(){
@@ -926,7 +1064,7 @@ async function ask(){
   const b=qaBubble("a","思考中…");
   try{
     const d=await api("/api/ask",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({file:qaFile,question:q,history:qaHistory.slice(-6)})});
+      body:JSON.stringify({file:qaFile,question:q,history:qaHistory.slice(-6),token:window.taskToken||"",cred:credPayload()})});
     b.innerHTML=mdRender(d.answer);
     qaHistory.push({q,a:d.answer});
   }catch(e){b.className="bub a";b.textContent="出错了："+e.message}
@@ -946,7 +1084,8 @@ async function loadHistory(){
 
 async function viewFile(enc){
   try{
-    const d=await api("/api/output?name="+enc);
+    const q=(window.taskToken?("&token="+encodeURIComponent(window.taskToken)):"");
+    const d=await api("/api/output?name="+enc+q);
     lastResult=d.content;lastFileName=d.name;
     qaHistory=[];qaFile=d.name;$("qaMsgs").innerHTML="";$("qaCard").style.display="block";
     // 从 ctx 记录的视频链接恢复时间戳跳转与弹幕条
@@ -966,6 +1105,21 @@ async function viewFile(enc){
 
 async function openSettings(){
   settingsDlg.showModal();
+  const hint=$("setHint");
+  hint.style.display="none";hint.textContent="";
+  if(PUBLIC_MODE){
+    // 公共模式：读写浏览器本地凭据，不碰服务器配置
+    hint.style.display="block";
+    hint.textContent="公共部署站：以下配置只保存在此设备的浏览器里（localStorage），不会上传服务器；每次总结随请求携带。";
+    const c=loadLocalCred();
+    $("cfg_provider").value=detectProvider(c.api_base||"");
+    $("cfg_api_base").value=c.api_base||"";
+    $("cfg_model").value=c.model||"Qwen/Qwen3-Omni-30B-A3B-Instruct";
+    $("cfg_temperature").value=c.temperature??0.3;
+    $("keyNow").textContent=c.api_key?("已保存（"+c.api_key.slice(0,5)+"***）"):"未配置";
+    $("sdNow").textContent="公共站不支持";
+    return;
+  }
   try{
     const d=await api("/api/config");
     const c=d.config||d;
@@ -973,19 +1127,35 @@ async function openSettings(){
     $("cfg_api_base").value=c.api_base||"";
     $("cfg_model").value=c.model||"";
     $("cfg_temperature").value=c.temperature??0.3;
+    $("cfg_vision").checked=!!c.vision;
     $("keyNow").textContent=c.api_key_masked||"未配置";
     $("sdNow").textContent=c.has_sessdata?"已配置":"未配置";
   }catch(e){}
 }
 
 async function saveSettings(){
+  if(PUBLIC_MODE){
+    const c={
+      api_base:$("cfg_api_base").value.trim(),
+      api_key:$("cfg_api_key").value.trim(),
+      model:$("cfg_model").value.trim()||"Qwen/Qwen3-Omni-30B-A3B-Instruct",
+      temperature:parseFloat($("cfg_temperature").value)||0.3
+    };
+    if(!c.api_key){alert("请输入 API Key");return}
+    saveLocalCred(c);
+    $("keyNow").textContent="已保存（"+c.api_key.slice(0,5)+"***）";
+    settingsDlg.close();$("cfg_api_key").value="";
+    showErr("");
+    return;
+  }
   const body={
     provider:$("cfg_provider").value,
     api_base:$("cfg_api_base").value.trim(),
     api_key:$("cfg_api_key").value.trim(),
     model:$("cfg_model").value.trim(),
     temperature:parseFloat($("cfg_temperature").value)||0.3,
-    sessdata:$("cfg_sessdata").value.trim()
+    sessdata:$("cfg_sessdata").value.trim(),
+    vision:$("cfg_vision").checked
   };
   try{
     await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -1008,6 +1178,34 @@ askCard.addEventListener("drop",e=>{
   const qp=new URLSearchParams(location.search);
   const q=qp.get("url");
   if(q){$("url").value=q;setTimeout(start,300)}
+})();
+
+/* ---------- 公共模式探测 ---------- */
+(async function(){
+  try{
+    const r=await fetch("/api/config");
+    const d=await r.json();
+    if(d.public){
+      PUBLIC_MODE=true;
+    }
+    if(d.site_paid){
+      SITE_PAID=true;
+      $("pubBanner").style.display="block";
+      $("pubBanner").innerHTML=`🌐 官方在线版 · 由服务器 AI 代答，无需自备 Key。
+        爱发电赞助 ¥${d.plan_price||29.9}/月 即可使用
+        （<a href="${d.afdian_url}" target="_blank" style="color:#b45309">afdian.com/a/Orisyan</a>），
+        或用作者发的激活码激活。`;
+      $("historyCard").style.display="none";
+      // 付费模式下默认展示订单验证入口
+      $("actOnlineRow").style.display="block";
+      loadLicense();
+      const s=await checkLicense();
+      if(s.licensed){
+        $("pubBanner").innerHTML=`✅ 已激活 · 有效期至 ${s.expiry} · 官方 API 已就绪`;
+        $("pubBanner").style.background="#f0fdf4";$("pubBanner").style.borderColor="#bbf7d0";$("pubBanner").style.color="#15803d";
+      }
+    }
+  }catch(e){}
 })();
 
 loadHistory();
