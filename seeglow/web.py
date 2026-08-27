@@ -1134,10 +1134,12 @@ def study_pack(req: StudyPackReq, request: Request):
     if req.mode == "exam":
         n = max(3, min(req.count or 8, 15))
         structure = EXAM_STRUCTURE_TPL if template_blocks else EXAM_STRUCTURE_NO_TPL
+        goal = (EXAM_GOAL_TPL if template_blocks
+                else EXAM_GOAL_NO_TPL.format(count=n))
         user_prompt = (
             f"{meta}\n\n【视频时间轴摘要】\n{timeline or '（无）'}\n\n"
             + EXAM_PROMPT.format(
-                count=n,
+                goal=goal,
                 content=doc_context or "（未上传综合题卷）",
                 template=template_context or "（未上传标准模板卷）",
                 structure_rule=structure,
@@ -1269,12 +1271,13 @@ async def study_pack_standalone(request: Request, files: list[UploadFile] = File
                        cfg.get("temperature", 0.3))
 
     if mode == "exam":
-        n = max(3, min(count or 8, 15))
         structure = EXAM_STRUCTURE_TPL if template_blocks else EXAM_STRUCTURE_NO_TPL
+        goal = (EXAM_GOAL_TPL if template_blocks
+                else EXAM_GOAL_NO_TPL.format(count=max(3, min(count or 8, 15))))
         user_prompt = (
             "（未提供视频，仅依据教师资料出卷）\n\n"
             + EXAM_PROMPT.format(
-                count=n,
+                goal=goal,
                 content=doc_context or "（未上传综合题卷）",
                 template=template_context or "（未上传标准模板卷）",
                 structure_rule=structure,
@@ -1344,7 +1347,7 @@ OUTLINE_PROMPT = """仅依据「教师提供的资料」（PPT/讲义/往年卷�
 
 要求：只依据材料本身，不要脑补材料外的内容；材料自相矛盾处如实指出。"""
 
-EXAM_PROMPT = """请依据下面提供的材料出一套 **{count} 题**的全新模拟卷。
+EXAM_PROMPT = """请{goal}。
 
 【综合题卷/资料】（题目内容与难度的依据）
 {content}
@@ -1369,6 +1372,9 @@ EXAM_PROMPT = """请依据下面提供的材料出一套 **{count} 题**的全�
 题目→考点→材料位置的对照列表（方便查漏）。
 
 要求：不超纲——只使用材料覆盖的知识点；每道题都须有可核查的出处标注。"""
+
+EXAM_GOAL_TPL = "按照标准模板卷的结构出一套全新模拟卷（题型、每类题的数量与分值一律以模板卷为准，忽略其他题量要求）"
+EXAM_GOAL_NO_TPL = "出一套 **{count} 题**左右的全新模拟卷"
 
 EXAM_STRUCTURE_TPL = ("⚠️ 试卷结构硬性对齐标准模板卷：题型种类、出现顺序、每种题型的题目数量与分值"
                       "必须与模板卷完全一致（如模板卷为『一、选择10题×3分；二、填空5题×4分；"
