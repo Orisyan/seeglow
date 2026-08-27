@@ -41,6 +41,7 @@ def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, sto
             client,
             progress_cb=lambda p, msg="": prog("summarize", 0.55 + p * 0.42, msg),
             style=style,
+            stop_check=stop_check,
         )
         return {
             "src": "B站字幕",
@@ -54,7 +55,14 @@ def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, sto
     reason = "无可用字幕" + (f"（{sub_error}）" if sub_error else "")
     prog("download", 0.16, f"{reason}，下载音频中…")
     audio_url = bilibili.get_audio_url(bvid, cid, sess)
-    tmp_audio = Path(tempfile.gettempdir()) / f"seeglow_{bvid}_p{page_no}_{int(time.time())}.m4s"
+    tmp_audio = Path(tempfile.gettempdir()) / f"seeglow_{bvid}_p{page_no}_{time.time_ns()}.m4s"
+    # 画面理解开关：开启时顺带取最低清视频流，供模型看题目/PPT
+    video_src = None
+    if str(cfg.get("vision") or "").lower() in ("1", "true", "on", "yes") or cfg.get("vision") is True:
+        try:
+            video_src = bilibili.get_video_url(bvid, cid, sess)
+        except Exception:
+            video_src = None  # 取不到画面流就纯听，不影响总结
     try:
         bilibili.download_audio(
             audio_url,
@@ -73,6 +81,7 @@ def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, sto
             stop_check=stop_check,
             notice_cb=lambda m: prog("omni", 0.3, m),
             style=style,
+            video_src=video_src,
         )
         return {
             "src": f"AI直听·{client.model}",
@@ -96,8 +105,22 @@ def _process_page(bvid, page_no, cid, part, title, owner, client, cfg, prog, sto
                 pass
 
 
-def run_pipeline(url: str, options: dict | None, progress_cb, stop_check=None) -> dict:
+def _base_cfg(cfg_override: dict | None = None) -> dict:
+    """公共部署（BYOK）时用请求带来的凭据覆盖服务端 config.json。"""
     cfg = load_config()
+    if cfg_override:
+        for k in ("api_base", "api_key", "model", "temperature"):
+            v = cfg_override.get(k)
+            if isinstance(v, (int, float)) and k == "temperature":
+                if 0 <= float(v) <= 1:
+                    cfg[k] = float(v)
+            elif isinstance(v, str) and v.strip():
+                cfg[k] = v.strip()
+    return cfg
+
+
+def run_pipeline(url: str, options: dict | None, progress_cb, stop_check=None, cfg_override: dict | None = None) -> dict:
+    cfg = _base_cfg(cfg_override)
     opts = options or {}
     style = opts.get("style") or "general"
     client = sz_mod.LLMClient(
@@ -233,11 +256,11 @@ def run_pipeline(url: str, options: dict | None, progress_cb, stop_check=None) -
     }
 
 
-def run_file_pipeline(file_path, display_title: str, style: str, progress_cb, stop_check=None) -> dict:
+def run_file_pipeline(file_path, display_title: str, style: str, progress_cb, stop_check=None, cfg_override: dict | None = None) -> dict:
     """总结本地音视频文件：解码 → AI 直听 → 落盘 Markdown。"""
     from pathlib import Path
 
-    cfg = load_config()
+    cfg = _base_cfg(cfg_override)
     client = sz_mod.LLMClient(
         cfg.get("api_base"), cfg.get("api_key"), cfg.get("model"), cfg.get("temperature", 0.3)
     )
@@ -247,6 +270,8 @@ def run_file_pipeline(file_path, display_title: str, style: str, progress_cb, st
 
     title = display_title or Path(file_path).stem or "本地文件"
     report("omni", 5, "解码本地文件…")
+    # 本地文件本身就是视频：开启画面理解时直接从文件抽帧
+    vision_on = str(cfg.get("vision") or "").lower() in ("1", "true", "on", "yes") or cfg.get("vision") is True
     try:
         res = sz_mod.summarize_audio_direct(
             str(file_path), title, client,
@@ -254,6 +279,7 @@ def run_file_pipeline(file_path, display_title: str, style: str, progress_cb, st
             stop_check=stop_check,
             notice_cb=lambda m: report("omni", 12, m),
             style=style,
+            video_src=(str(file_path) if vision_on else None),
         )
     except Exception as e:
         if "取消" in str(e):
@@ -290,7 +316,7 @@ def run_file_pipeline(file_path, display_title: str, style: str, progress_cb, st
     }
 
 
-def run_batch_pipeline(items: list, style: str, progress_cb, stop_check=None) -> dict:
+def run_batch_pipeline(items: list, style: str, progress_cb, stop_check=None, cfg_override: dict | None = None) -> dict:
     """批量总结：items=[{bvid,title}]，逐个跑完整流水线，最后生成目录索引。
 
     单个视频失败不中断批次，记录错误继续。
@@ -315,7 +341,8 @@ def run_batch_pipeline(items: list, style: str, progress_cb, stop_check=None) ->
 
         try:
             r = run_pipeline(f"https://www.bilibili.com/video/{it['bvid']}",
-                             {"style": style}, prog, stop_check)
+                             {"style": style}, prog, stop_check,
+                             cfg_override=cfg_override)
             files.append({"title": it.get("title") or r["title"], "file": r["output_file"],
                           "url": r["url"], "author": r.get("author", "")})
         except Exception as e:
