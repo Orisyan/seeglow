@@ -459,7 +459,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
   <div class="frow"><label>模式</label>
     <select id="studyMode" style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:14px;cursor:pointer">
     </select></div>
-  <div class="frow" id="examCountRow" style="display:none"><label>题量：3 ~ 15</label>
+  <div class="frow" id="examCountRow" style="display:none"><label id="examCountLabel">题量：3 ~ 15（模拟卷总题数）</label>
     <input id="examCount" type="number" min="3" max="15" value="8"></div>
   <div id="studyMsg" style="font-size:13px;color:var(--sub);min-height:20px;margin-top:4px"></div>
   <div class="dlg-foot">
@@ -1327,18 +1327,34 @@ async function doStudyPack(){
 document.addEventListener("change",e=>{
   if(e.target&&e.target.id==="studyMode"){
     const v=e.target.value;
-    $("examCountRow").style.display=v==="exam"?"block":"none";
-    if(studyFusion){
-      // 融合模式：单文件上传，用角色下拉区分
-      $("docRoleRow").style.display=v==="exam"?"block":"none";
-      $("tplRow").style.display="none";
-    }else{
-      // 独立模式：双文件槽
-      $("tplRow").style.display=v==="exam"?"block":"none";
-      $("docRoleRow").style.display="none";
-    }
+    syncStudyRows();
+  }
+  if(e.target&&e.target.id==="tplFile"){
+    // 选了标准模板卷 → 结构由模板决定，题量失效
+    syncStudyRows();
   }
 });
+function syncStudyRows(){
+  const v=$("studyMode").value;
+  const hasTpl=studyFusion?false:$("tplFile").files.length>0;
+  $("examCountRow").style.display=v==="exam"?"block":"none";
+  if(v==="exam"&&hasTpl){
+    $("examCountLabel").textContent="题量：已由标准模板卷决定（本题量设置自动忽略）";
+    $("examCount").disabled=true;
+  }else{
+    $("examCountLabel").textContent="题量：3 ~ 15（模拟卷总题数）";
+    $("examCount").disabled=false;
+  }
+  if(studyFusion){
+    // 融合模式：单文件上传，用角色下拉区分
+    $("docRoleRow").style.display=v==="exam"?"block":"none";
+    $("tplRow").style.display="none";
+  }else{
+    // 独立模式：双文件槽
+    $("tplRow").style.display=v==="exam"?"block":"none";
+    $("docRoleRow").style.display="none";
+  }
+}
 
 /* ---------- 本地文件拖拽 ---------- */
 const askCard=document.querySelector(".ask-card");
