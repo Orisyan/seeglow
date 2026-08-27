@@ -185,18 +185,20 @@ def main():
     assert "标准模板卷" in sent and "10题×3分" in sent, sent[:400]
     assert "综合题卷" in sent and "泰勒公式" in sent, sent[:400]
     assert "结构硬性对齐" in sent, sent[:400]
-    # 题量上限：有模板卷时结构由模板决定，count 19 被裁剪不影响结构指令
-    print("[ok] 双卷出题：内容与结构分开注入，硬性对齐指令生效")
+    # 有模板卷时：goal 明确“以模板卷为准”，不再强调总题数
+    assert "以模板卷为准" in sent and "19 题" not in sent, sent[:400]
+    print("[ok] 双卷出题：内容与结构分开注入，题量被忽略、以模板卷为准")
 
-    # 7d. 无模板卷 → 使用 NO_TPL 结构规则
+    # 7d. 无模板卷 → 使用 NO_TPL 结构规则，题量生效
     calls.clear()
     with open(TMP / "t4.pptx", "rb") as f:
         r = c.post("/api/study_pack_standalone",
                    files=[("files", ("综合题卷.pptx", f))],
                    data={"mode": "exam"}, headers=headers)
     sent = calls[-1]
-    assert "模仿【综合题卷/资料】中试卷自身的结构" in sent and "标准模板卷】" not in sent.split("【综合题卷")[0], sent[:300]
-    print("[ok] 无模板卷 → 沿用综合题卷自身结构")
+    assert "模仿【综合题卷/资料】中试卷自身的结构" in sent, sent[:300]
+    assert "8 题" in sent, sent[:300]
+    print("[ok] 无模板卷 → 沿用综合题卷自身结构，题量生效")
 
     # 7e. docs.json 记录 role（服务端命名规则：<笔记全名>.docs.json）
     last_note = outdir / (j["output_file"] + ".docs.json")
