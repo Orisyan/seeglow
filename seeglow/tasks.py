@@ -22,7 +22,18 @@ def create_task() -> str:
             "result": None,
             "error": None,
         }
+        # 顺手清理 6 小时前的旧任务记录，公共部署下防内存无限增长
+        cutoff = time.time() - 6 * 3600
+        stale = [k for k, v in _tasks.items() if v.get("created", 0) < cutoff]
+        for k in stale:
+            _tasks.pop(k, None)
     return tid
+
+
+def running_count() -> int:
+    """当前 running 状态的任务数（并发限额用）。"""
+    with _lock:
+        return sum(1 for t in _tasks.values() if t.get("status") == "running")
 
 
 def update_task(tid: str, **kw):
