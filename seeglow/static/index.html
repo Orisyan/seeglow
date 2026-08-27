@@ -274,6 +274,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
             <button id="cardBtn" onclick="makeFlashcards()">闪卡 .txt</button>
             <button onclick="openRewrite()">✍️ 改写文案</button>
             <button id="srtBtn" onclick="exportSRT()" title="仅B站有字幕的视频可导">字幕 .srt</button>
+            <button onclick="openStudy()" title="上传教师PPT/往年卷，融合生成备考包或押题卷">📚 期末冲刺</button>
             <button onclick="window.print()" title="打印或另存为 PDF">🖨 打印/PDF</button>
           </div>
         </div>
@@ -405,6 +406,33 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
   <div class="dlg-foot">
     <button onclick="settingsDlg.close()">取消</button>
     <button class="pri" onclick="saveSettings()">保存设置</button>
+  </div>
+</dialog>
+
+<dialog id="studyDlg">
+  <h3>📚 期末冲刺</h3>
+  <div style="font-size:12.5px;color:var(--sub);line-height:1.7;margin-bottom:10px">
+    上传老师发的 <b>PPT / 往年卷</b>（支持 pptx · docx · pdf · txt · 图片，≤30MB），
+    与这支视频融合：生成考点对照的备考包，或按往年卷风格出一套押题卷。
+    每份笔记最多关联 5 个文件；扫描版 PDF/图片由 AI 逐字转写。
+  </div>
+  <div class="frow">
+    <label>上传资料（可分多次追加）</label>
+    <input type="file" id="studyFile" accept=".pptx,.docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp"
+           style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;color:var(--ink)">
+  </div>
+  <div class="frow"><label>模式</label>
+    <select id="studyMode" style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:14px;cursor:pointer">
+      <option value="fuse">🎯 备考融合包（考点三方对照 + 盲区清单）</option>
+      <option value="exam">📝 押题卷（模仿往年卷出 N 道新题带解析）</option>
+    </select></div>
+  <div class="frow" id="examCountRow" style="display:none"><label>题量：3 ~ 15</label>
+    <input id="examCount" type="number" min="3" max="15" value="8"></div>
+  <div id="studyMsg" style="font-size:13px;color:var(--sub);min-height:20px;margin-top:4px"></div>
+  <div class="dlg-foot">
+    <button onclick="studyDlg.close()">关闭</button>
+    <button onclick="doUploadDoc()">⬆️ 仅上传资料</button>
+    <button class="pri" id="studyGoBtn" onclick="doStudyPack()">立即生成</button>
   </div>
 </dialog>
 
@@ -1168,6 +1196,61 @@ async function saveSettings(){
     settingsDlg.close();$("cfg_api_key").value="";$("cfg_sessdata").value="";
   }catch(e){alert("保存失败："+e.message)}
 }
+
+/* ---------- 期末冲刺：资料上传 + 备考融合 ---------- */
+function openStudy(){
+  if(!lastFileName)return alert("请先生成或打开一份视频笔记");
+  $("studyMsg").textContent="";$("studyFile").value="";
+  studyDlg.showModal();
+}
+function _studyFormData(){
+  const f=$("studyFile").files[0];
+  if(!f){$("studyMsg").textContent="请先选择要上传的资料文件";return null}
+  const fd=new FormData();
+  fd.append("file",f);
+  fd.append("note_file",lastFileName);
+  return fd;
+}
+async function doUploadDoc(){
+  const fd=_studyFormData();if(!fd)return;
+  const m=$("studyMsg");m.textContent="上传并解析中…（扫描页会交给 AI 转写，可能较慢）";
+  try{
+    const r=await fetch("/api/upload_doc",{method:"POST",headers:authHeaders(),body:fd});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||("失败 "+r.status));
+    const kinds=Object.entries(d.kinds||{}).map(([k,v])=>({slide:"幻灯片",page:"页",para:"段落"}[k]||k)+`×${v}`).join("、");
+    m.innerHTML=`✅ 已上传：共 ${d.block_count} 块内容（${kinds}），${d.chars} 字。<br>`+(d.notices||[]).join("<br>")+"<br>可以继续追加文件，或点「立即生成」。";
+  }catch(e){m.textContent="上传失败："+e.message;m.style.color="var(--err)"}
+}
+async function doStudyPack(){
+  if(!lastFileName)return;
+  // 弹窗里有新选的文件 → 先上传再生成
+  if($("studyFile").files[0]){
+    await doUploadDoc();
+    if(!$("studyMsg").textContent.startsWith("✅"))return;   // 上传失败则终止
+  }
+  const m=$("studyMsg");
+  const mode=$("studyMode").value;
+  const btn=$("studyGoBtn");btn.disabled=true;
+  m.textContent=mode==="exam"?"正在研究往年卷风格并出题…（约1~2分钟）":"正在做考点三方对照…（约1~2分钟）";
+  try{
+    const d=await api("/api/study_pack",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({file:lastFileName,mode,count:parseInt($("examCount").value)||8,token:window.taskToken||"",cred:credPayload()})});
+    studyDlg.close();
+    lastResult=d.text;lastFileName=d.output_file;
+    window.curVideo=null;
+    $("resultTitle").textContent=d.output_file.replace(/\.md$/,"");
+    $("mdBody").innerHTML=mdRender(d.text);
+    enhanceStudyPack();
+    loadHistory();
+    $("resultCard").scrollIntoView({behavior:"smooth"});
+  }catch(e){m.textContent="生成失败："+e.message}
+}
+document.addEventListener("change",e=>{
+  if(e.target&&e.target.id==="studyMode"){
+    $("examCountRow").style.display=e.target.value==="exam"?"block":"none";
+  }
+});
 
 /* ---------- 本地文件拖拽 ---------- */
 const askCard=document.querySelector(".ask-card");
