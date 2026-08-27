@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import time
 from pathlib import Path
 
@@ -125,6 +126,19 @@ def style_hint(style: str) -> str:
     return STYLE_GUIDES.get(style or "general", "")
 
 
+def frame_grid_note(n_frames, times_sec) -> str:
+    """随音频附画面关键帧截图墙时，向模型说明网格布局与各帧时间点。"""
+    from .bilibili import fmt_ts
+
+    times = "、".join(f"第{i + 1}帧[{fmt_ts(t)}]" for i, t in enumerate(times_sec))
+    return (
+        f"\n\n【画面截图墙】消息中另附 {n_frames} 张本段画面关键帧，拼成一张网格图，"
+        f"按从左到右、从上到下的顺序排布（共 {n_frames} 帧）。{times}。\n"
+        "请结合画面理解内容：画面上出现的题目、选项、公式、代码、板书、字幕等文字必须"
+        "**逐字转写**并标注 `[mm:ss]` 时间点；区分『主讲人讲到』与『仅屏幕展示』的信息。"
+    )
+
+
 def chunk_text(text: str, max_chars: int = CHUNK_CHARS):
     lines = text.splitlines()
     chunks, cur, size = [], [], 0
@@ -196,7 +210,16 @@ REDUCE_PROMPT = """下面是一支长视频各片段的小结，请整合成一�
 要求：合并重复内容；时间线按时间顺序排列并保留 `[mm:ss]` 时间点。"""
 
 
-def summarize_transcript(transcript_text: str, meta: str, client: LLMClient, progress_cb=None, style="general"):
+def _stopped(stop_check) -> bool:
+    return stop_check is not None and stop_check()
+
+
+def _raise_if_cancelled(stop_check):
+    if _stopped(stop_check):
+        raise RuntimeError("已取消")
+
+
+def summarize_transcript(transcript_text: str, meta: str, client: LLMClient, progress_cb=None, style="general", stop_check=None):
     def report(p, msg=""):
         if progress_cb:
             progress_cb(min(max(p, 0.0), 1.0), msg)
@@ -205,6 +228,7 @@ def summarize_transcript(transcript_text: str, meta: str, client: LLMClient, pro
     n = len(chunks)
 
     if n == 1:
+        _raise_if_cancelled(stop_check)
         report(0.15, "正在生成总结…")
         md = client.chat(
             [
@@ -218,6 +242,7 @@ def summarize_transcript(transcript_text: str, meta: str, client: LLMClient, pro
 
     partials = []
     for i, ch in enumerate(chunks):
+        _raise_if_cancelled(stop_check)
         report(i / n * 0.85, f"分段精读 {i + 1}/{n}…")
         part = client.chat(
             [
@@ -230,6 +255,7 @@ def summarize_transcript(transcript_text: str, meta: str, client: LLMClient, pro
         )
         partials.append(part)
 
+    _raise_if_cancelled(stop_check)
     report(0.9, "汇总全文总结…")
     joined = "\n\n".join(f"【片段 {i + 1} 小结】\n{p}" for i, p in enumerate(partials))
     md = client.chat(
@@ -291,12 +317,10 @@ REDUCE_AUDIO_PROMPT = """下面是 AI 逐段聆听视频《{title}》音频后�
 
 
 def _wav_b64(path) -> str:
-    import base64
-
     return base64.b64encode(Path(path).read_bytes()).decode()
 
 
-def build_audio_message(prompt: str, audio_path, style: str = "input_audio") -> dict:
+def build_audio_message(prompt: str, audio_path, style: str = "input_audio", image_paths=None) -> dict:
     suffix = str(audio_path).lower().rsplit(".", 1)[-1]
     mime = "audio/mpeg" if suffix == "mp3" else "audio/wav"
     fmt = suffix if suffix in ("mp3", "wav") else "wav"
@@ -313,47 +337,61 @@ def build_audio_message(prompt: str, audio_path, style: str = "input_audio") -> 
             {"type": "text", "text": prompt},
             {"type": "input_audio", "input_audio": {"data": b64, "format": fmt}},
         ]
+    # 画面截图墙：两类平台均使用 image_url + data-uri（gpt-4o / Qwen-VL / Omni 通用）
+    for p in image_paths or []:
+        img_b64 = base64.b64encode(Path(p).read_bytes()).decode()
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}})
     return {"role": "user", "content": content}
 
 
-def _listen_chunk(client, system_prompt, prompt, audio_path, preferred_style):
-    """让模型听一段音频并返回小结；平台不接受 input_audio 时自动换 data-uri 格式。"""
-    try:
-        return (
-            client.chat(
-                [
-                    {"role": "system", "content": system_prompt},
-                    build_audio_message(prompt, audio_path, preferred_style),
-                ]
-            ),
-            preferred_style,
-        )
-    except LLMError as e:
-        if preferred_style == "input_audio" and "400" in str(e):
-            return (
-                client.chat(
-                    [
-                        {"role": "system", "content": system_prompt},
-                        build_audio_message(prompt, audio_path, "audio_url"),
-                    ]
-                ),
-                "audio_url",
-            )
-        raise
+def _listen_chunk(client, system_prompt, prompt, audio_path, images=None, preferred_style="input_audio"):
+    """让模型听一段音频并返回小结。
+
+    降级链：带图+input_audio → 无图+input_audio → 无图+data-uri；
+    模型对图片报 400 时记住 client._no_images，后续分段直接跳过图片。
+    """
+    def call(with_images, audio_style):
+        msg = build_audio_message(prompt, audio_path, audio_style,
+                                  image_paths=(images if with_images else None))
+        return client.chat([
+            {"role": "system", "content": system_prompt},
+            msg,
+        ])
+
+    no_images = getattr(client, "_no_images", False)
+    attempts = []
+    if images and not no_images:
+        attempts.append((True, preferred_style))
+    attempts.append((False, preferred_style))
+    if preferred_style == "input_audio":
+        attempts.append((False, "audio_url"))
+
+    last_err = None
+    for with_images, audio_style in attempts:
+        try:
+            return call(with_images, audio_style), audio_style
+        except LLMError as e:
+            last_err = e
+            if "400" not in str(e):
+                raise
+            if with_images:
+                # 图片被拒（模型无视觉能力），本会话内不再重试图片
+                client._no_images = True
+    raise last_err
 
 
-def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=None, stop_check=None, notice_cb=None, style="general"):
+def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=None, stop_check=None, notice_cb=None, style="general", video_src=None):
     def notice(msg):
         if notice_cb:
             notice_cb(msg)
 
     def stopped():
-        return stop_check is not None and stop_check()
+        return _stopped(stop_check)
 
     import os
     import tempfile
 
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
     from .audioutil import SR, cleanup, chunk_starts, decode_audio, export_chunk, split_chunks
     from .bilibili import fmt_ts
@@ -363,34 +401,59 @@ def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=Non
     chunks = split_chunks(audio, AUDIO_CHUNK_SEC)
     n = len(chunks)
     starts = chunk_starts(chunks)
-    total_sec = starts[-1] + len(chunks[-1]) / SR if chunks else 0
+    durs = [len(ch) / SR for ch in chunks]
+    total_sec = starts[-1] + durs[-1] if chunks else 0
 
     tmp_dir = Path(tempfile.gettempdir())
-    name_base = f"seeglow_omni_{os.getpid()}"
+    # 唯一化：并发任务/重试不会互相覆盖删除（此前同名文件被另一任务清理会导致“系统找不到文件”）
+    import uuid as _uuid
+
+    name_base = f"seeglow_omni_{os.getpid()}_{_uuid.uuid4().hex[:8]}"
     paths = []
+    grids = {}  # {chunk_idx: (jpg_path, [帧时间点])}
     try:
         for i, ch in enumerate(chunks):
             paths.append(export_chunk(ch, tmp_dir, f"{name_base}_{i}"))
+
+        # 画面理解：抽关键帧拼截图墙（视频源不可用/失败时静默退回纯听）
+        if video_src:
+            try:
+                from .audioutil import build_frame_grids
+
+                notice("正在抽取画面关键帧…")
+                grids, grid_paths = build_frame_grids(
+                    video_src, starts, durs, tmp_dir, f"{name_base}_vis",
+                    notice=notice, stop_check=stop_check,
+                )
+                paths.extend(grid_paths)
+                if not grids:
+                    notice("未取到可用画面，转为纯听模式")
+            except Exception as e:
+                grids = {}
+                notice(f"画面提取失败（{str(e)[:60]}），转为纯听模式")
+
         sizes = sum(p.stat().st_size for p in paths)
+        vis_note = " + 画面" if grids else ""
         notice(
-            f"音频 {total_sec:.0f}s → {len(paths)} 段（共 {sizes // 1024} KB），"
+            f"音频 {total_sec:.0f}s → {len(paths)} 段（共 {sizes // 1024} KB）{vis_note}，"
             + (f"{AUDIO_CONCURRENCY} 路并行直听…" if n > 1 else "AI 正在听…")
         )
 
         # 单段：一次调用直接产出最终总结（省去汇总步骤）
         if n == 1:
+            _raise_if_cancelled(stop_check)
             if progress_cb:
                 progress_cb(0.25, f"AI 正在听音频（{sizes // 1024} KB）…")
-            md, _ = _listen_chunk(
-                client,
-                SYSTEM_PROMPT,
-                AUDIO_SINGLE_PROMPT.format(
-                    title=title, start=fmt_ts(starts[0]), end=fmt_ts(total_sec),
-                    style_hint=style_hint(style),
-                ),
-                paths[0],
-                "input_audio",
+            prompt = AUDIO_SINGLE_PROMPT.format(
+                title=title, start=fmt_ts(starts[0]), end=fmt_ts(total_sec),
+                style_hint=style_hint(style),
             )
+            imgs = None
+            if 0 in grids:
+                gpath, gtimes = grids[0]
+                prompt += frame_grid_note(len(gtimes), gtimes)
+                imgs = [gpath]
+            md, _ = _listen_chunk(client, SYSTEM_PROMPT, prompt, paths[0], images=imgs)
             if progress_cb:
                 progress_cb(1.0, "总结完成")
             ctx = [{
@@ -405,25 +468,46 @@ def summarize_audio_direct(audio_path, title, client: LLMClient, progress_cb=Non
         done = 0
 
         def job(idx):
-            end_t = starts[idx] + len(chunks[idx]) / SR
+            _raise_if_cancelled(stop_check)
+            end_t = starts[idx] + durs[idx]
             prompt = AUDIO_MAP_PROMPT.format(
                 title=title, start=fmt_ts(starts[idx]), end=fmt_ts(end_t)
             )
-            return _listen_chunk(client, SYSTEM_PROMPT, prompt, paths[idx], "input_audio")
+            imgs = None
+            if idx in grids:
+                gpath, gtimes = grids[idx]
+                prompt += frame_grid_note(len(gtimes), gtimes)
+                imgs = [gpath]
+            return _listen_chunk(client, SYSTEM_PROMPT, prompt, paths[idx], images=imgs)
 
         workers = min(AUDIO_CONCURRENCY, n)
-        with ThreadPoolExecutor(max_workers=workers) as pool:
+        pool = ThreadPoolExecutor(max_workers=workers)
+        try:
             futures = {pool.submit(job, i): i for i in range(n)}
-            for fu in as_completed(futures):
-                idx = futures[fu]
-                partials[idx], _style = fu.result()
-                done += 1
+            pending = set(futures)
+            while pending:
+                # 每 0.5 秒醒来查一次取消，点击“取消任务”后秒级生效
+                done_set, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
                 if stopped():
-                    pool.shutdown(wait=False, cancel_futures=True)
-                    raise RuntimeError("已取消")
-                if progress_cb:
-                    progress_cb(done / n * 0.85, f"AI 并行直听中… {done}/{n}")
+                    break
+                for fu in done_set:
+                    partials[futures[fu]], _style = fu.result()
+                    done += 1
+                    if stopped():
+                        break
+                    if progress_cb:
+                        progress_cb(done / n * 0.85, f"AI 并行直听中… {done}/{n}")
+                if stopped():
+                    break
+            if stopped():
+                for fu in pending:
+                    fu.cancel()
+                raise RuntimeError("已取消")
+        finally:
+            # 不等待在途请求：取消时立即返回，未完成的调用在后台自然结束
+            pool.shutdown(wait=False, cancel_futures=True)
 
+        _raise_if_cancelled(stop_check)
         if progress_cb:
             progress_cb(0.9, "汇总全文总结…")
         joined = "\n\n".join(partials)
