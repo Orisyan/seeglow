@@ -275,3 +275,105 @@ def make_web_code(plan: str = "month") -> str:
         n, r = divmod(n, 36)
         code = _B36[r] + code
     return "-".join(code[i : i + 5] for i in range(0, len(code), 5))
+
+
+# ---------------- 用户系统（账号 + 会话 + 每日试用额度） ----------------
+
+TRIAL_PER_DAY = int(os.getenv("SEEGLOW_TRIAL_PER_DAY", "3"))
+SESSION_DAYS = 30
+
+
+def _hash_password(password: str, salt_hex: str) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), 100_000).hex()
+
+
+def register_user(username: str, password: str) -> str:
+    """注册新用户（用户名不区分大小写，唯一）。成功返回规范化用户名。"""
+    username = (username or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_\u4e00-\u9fa5]{2,24}", username):
+        raise ValueError("用户名需 2~24 位，仅限中文、字母、数字、下划线")
+    if len(password or "") < 6:
+        raise ValueError("密码至少 6 位")
+    key = "user:" + username.lower()
+    if _store_get(key):
+        raise ValueError("该用户名已被注册")
+    salt = os.urandom(16).hex()
+    _store_put(key, {"salt": salt, "pw": _hash_password(password, salt),
+                     "created": time.time(), "expiry": "", "plan": ""})
+    return username.lower()
+
+
+def verify_login(username: str, password: str) -> bool:
+    rec = _store_get("user:" + (username or "").strip().lower())
+    if not rec:
+        return False
+    return hmac.compare_digest(_hash_password(password or "", rec["salt"]), rec.get("pw", ""))
+
+
+def issue_session(username: str) -> str:
+    token = uuid.uuid4().hex + uuid.uuid4().hex[:16]
+    _store_put("sess:" + token, {"user": username.lower(), "exp": time.time() + SESSION_DAYS * 86400})
+    return token
+
+
+def drop_session(token: str):
+    if token:
+        _store_put("sess:" + token, None)
+
+
+def session_user(token: str) -> str | None:
+    if not token:
+        return None
+    s = _store_get("sess:" + token)
+    if not s or not isinstance(s, dict) or s.get("exp", 0) < time.time():
+        return None
+    return s.get("user")
+
+
+def get_user(username: str) -> dict:
+    return _store_get("user:" + (username or "")) or {}
+
+
+def set_user_licence(username: str, plan: str, expiry: str):
+    rec = get_user(username)
+    if not rec:
+        return
+    rec["plan"], rec["expiry"] = plan, expiry
+    _store_put("user:" + username, rec)
+
+
+def user_licence_expiry(username: str) -> str:
+    """会员有效期；非会员返回空串。"""
+    rec = get_user(username)
+    exp = str(rec.get("expiry") or "")
+    try:
+        if exp and datetime.strptime(exp, "%Y-%m-%d").date() >= date.today():
+            return exp
+    except ValueError:
+        pass
+    return ""
+
+
+def _quota_key(username: str) -> str:
+    return f"quota:{username}:{date.today().isoformat()}"
+
+
+def quota_left(username: str) -> int:
+    used = int(_store_get(_quota_key(username), 0) or 0)
+    return max(TRIAL_PER_DAY - used, 0)
+
+
+def consume_quota(username: str) -> int:
+    """消耗一次当日体验额度。
+
+    返回本次消耗后的剩余次数（0 表示"这是最后一次"）；
+    额度已耗尽返回 -1（本次未消耗，调用方应拒绝）。
+    语义：TRIAL_PER_DAY=3 表示当天最多成功跑 3 次。
+    """
+    k = _quota_key(username)
+    used = int(_store_get(k, 0) or 0)
+    if used >= TRIAL_PER_DAY:
+        return -1
+    used += 1
+    _store_put(k, used)
+    return TRIAL_PER_DAY - used
