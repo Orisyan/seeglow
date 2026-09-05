@@ -135,17 +135,44 @@ def merge_cred(cfg: dict, cred: Optional[dict]) -> dict:
     return out
 
 
-def require_paid(request: Request) -> dict:
-    """付费模式：校验授权票据。未激活返回 402（前端弹赞助/激活窗）。"""
+def require_paid(request: Request, consume: bool = False) -> dict:
+    """网站付费模式的访问门禁（账号体系）。
+
+    返回 {"kind": "open"|"licensed"|"trial", ...}：
+    - licensed：会员（爱发电订单/激活码绑定账号，或旧版浏览器票据）
+    - trial：已注册用户，consume=True 时消耗一次当日体验额度（默认每日 3 次）
+    - 匿名访问 → 401（不注册不送体验）；额度用尽 → 402
+    """
     if not SITE_PAID_MODE:
         return {"kind": "open"}
+    from . import pro_web
+
+    # 1) 账号会话
+    user = pro_web.session_user(request.headers.get("x-seeglow-session", ""))
+    if user:
+        exp = pro_web.user_licence_expiry(user)
+        if exp:
+            return {"kind": "licensed", "user": user, "expiry": exp}
+        if consume:
+            left = pro_web.consume_quota(user)
+            if left < 0:
+                raise HTTPException(
+                    402,
+                    f"今日免费体验 {pro_web.TRIAL_PER_DAY} 次已用完，明天自动恢复；"
+                    f"赞助 ￥{pro_web.PLAN_PRICE:g}/月或使用激活码即不限次数",
+                )
+            return {"kind": "trial", "user": user, "uses_left": left}
+        return {"kind": "trial", "user": user, "uses_left": pro_web.quota_left(user)}
+
+    # 2) 旧版浏览器票据（历史用户兼容）
     auth = _auth(request)
-    if auth is None:
-        raise HTTPException(
-            402,
-            "本站由服务器官方 API 代答，需赞助解锁：爱发电 ¥29.9/月，或使用作者发的激活码",
-        )
-    return auth
+    if auth:
+        return {"kind": "licensed", "expiry": auth.get("expiry", "")}
+
+    raise HTTPException(
+        401,
+        "请先注册/登录（注册每日免费体验 3 次），或激活会员",
+    )
 
 
 class ParseReq(BaseModel):
@@ -184,6 +211,14 @@ class ConfigReq(BaseModel):
 
 @app.get("/")
 def index():
+    """付费模式：/ 为产品介绍页，应用在 /app；私有模式：/ 即应用。"""
+    if SITE_PAID_MODE:
+        return FileResponse(STATIC_DIR / "landing.html")
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/app")
+def app_page():
     return FileResponse(STATIC_DIR / "index.html")
 
 
@@ -237,7 +272,7 @@ def parse_video(req: ParseReq):
 def start(req: StartReq, request: Request):
     if not req.url.strip():
         raise HTTPException(400, "请输入视频链接")
-    auth = require_paid(request)
+    auth = require_paid(request, consume=True)
     if PUBLIC_MODE:
         ip = client_ip(request)
         if running_count() >= MAX_CONCURRENT:
@@ -262,13 +297,16 @@ def start(req: StartReq, request: Request):
         )
 
     tasks.run_in_background(tid, job)
-    return {"task_id": tid}
+    resp = {"task_id": tid, "token": _task_tokens.get(tid, {}).get("token", "")}
+    if auth.get("kind") == "trial":
+        resp["uses_left"] = auth.get("uses_left")
+    return resp
 
 
 @app.post("/api/start_batch")
 def start_batch(req: BatchReq, request: Request):
     """批量总结合集/收藏夹视频（私有上限 30 支，公共模式 6 支）。"""
-    auth = require_paid(request)
+    auth = require_paid(request, consume=True)
     cap = MAX_BATCH_PUBLIC if PUBLIC_MODE else 30
     items = [i for i in (req.items or []) if i.get("bvid")][:cap]
     if not items:
@@ -305,7 +343,7 @@ async def start_file(request: Request, file: UploadFile = File(...), style: str 
     import os as _os
     import tempfile as _tf
 
-    auth = require_paid(request)
+    auth = require_paid(request, consume=True)
     if PUBLIC_MODE:
         ip = client_ip(request)
         if running_count() >= MAX_CONCURRENT:
@@ -858,6 +896,77 @@ def update_config(req: ConfigReq):
     return cfg
 
 
+# ---------------- 用户系统：注册 / 登录 / 会话 ----------------
+
+class AuthReq(BaseModel):
+    username: str
+    password: str
+
+
+def _auth_rate_guard():
+    now = time.time()
+    hits = [t for t in getattr(_auth_rate_guard, "_h", []) if now - t < 60]
+    if len(hits) >= 12:
+        raise HTTPException(429, "尝试过于频繁，请稍后再试")
+    _auth_rate_guard._h = hits + [now]
+
+
+@app.post("/api/auth/register")
+def auth_register(req: AuthReq):
+    if not SITE_PAID_MODE:
+        raise HTTPException(404, "未启用付费模式")
+    _auth_rate_guard()
+    from . import pro_web
+
+    try:
+        username = pro_web.register_user(req.username, req.password)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    token = pro_web.issue_session(username)
+    return {"ok": True, "token": token, "username": username,
+            "uses_left": pro_web.TRIAL_PER_DAY}
+
+
+@app.post("/api/auth/login")
+def auth_login(req: AuthReq):
+    if not SITE_PAID_MODE:
+        raise HTTPException(404, "未启用付费模式")
+    _auth_rate_guard()
+    from . import pro_web
+
+    username = (req.username or "").strip().lower()
+    if not pro_web.verify_login(username, req.password):
+        return {"ok": False, "error": "用户名或密码不正确"}
+    token = pro_web.issue_session(username)
+    expiry = pro_web.user_licence_expiry(username)
+    return {"ok": True, "token": token, "username": username, "expiry": expiry,
+            "uses_left": (pro_web.TRIAL_PER_DAY if not expiry else None)}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request):
+    from . import pro_web
+
+    pro_web.drop_session(request.headers.get("x-seeglow-session", ""))
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request):
+    if not SITE_PAID_MODE:
+        return {"site_paid": False}
+    from . import pro_web
+
+    user = pro_web.session_user(request.headers.get("x-seeglow-session", ""))
+    if not user:
+        return {"site_paid": True, "user": None}
+    expiry = pro_web.user_licence_expiry(user)
+    return {"site_paid": True, "user": user, "expiry": expiry,
+            "licensed": bool(expiry), "plan": pro_web.get_user(user).get("plan", ""),
+            "uses_left": (None if expiry else pro_web.quota_left(user)),
+            "trial_per_day": pro_web.TRIAL_PER_DAY}
+
+
 # ---------------- 网站版激活（爱发电订单 / 作者激活码） ----------------
 
 class SiteOrderReq(BaseModel):
@@ -871,12 +980,15 @@ class SiteCodeReq(BaseModel):
 
 
 @app.post("/api/pro/order")
-def site_order(req: SiteOrderReq):
-    """爱发电订单号在线验证 → 签发浏览器票据。"""
+def site_order(req: SiteOrderReq, request: Request):
+    """爱发电订单号在线验证 → 绑定到当前登录账号。"""
     if not SITE_PAID_MODE:
         raise HTTPException(404, "未启用付费模式")
     from . import pro_web
 
+    username = pro_web.session_user(request.headers.get("x-seeglow-session", ""))
+    if not username:
+        raise HTTPException(401, "请先注册/登录，激活会绑定到你的账号")
     if not req.order_no.strip():
         raise HTTPException(400, "请输入赞助订单号")
     # 简单防爆破：全局每分钟最多 10 次订单验证
@@ -894,17 +1006,21 @@ def site_order(req: SiteOrderReq):
         return {"ok": False, "error": f"该订单金额（¥{amount:.2f}）未达到 ¥{pro_web.PLAN_PRICE:g}/月 档位门槛"}
     months = max(int(o.get("month") or 1), 1)
     expiry = (datetime.now() + timedelta(days=pro_web.PLAN_DAYS * months)).strftime("%Y-%m-%d")
-    uid = req.order_no.strip()
-    ticket = pro_web.make_ticket(uid, expiry, "afdian")
+    pro_web.set_user_licence(username, "afdian", expiry)
+    ticket = pro_web.make_ticket(req.order_no.strip(), expiry, "afdian")
     return {"ok": True, **ticket}
 
 
 @app.post("/api/pro/code")
-def site_code(req: SiteCodeReq):
-    """作者签发的激活码激活（无需爱发电赞助）。不绑定设备：一码多设备通用。"""
+def site_code(req: SiteCodeReq, request: Request):
+    """作者签发的激活码激活（无需爱发电赞助）→ 绑定到当前登录账号。"""
     if not SITE_PAID_MODE:
         raise HTTPException(404, "未启用付费模式")
     from . import pro_web
+
+    username = pro_web.session_user(request.headers.get("x-seeglow-session", ""))
+    if not username:
+        raise HTTPException(401, "请先注册/登录，激活会绑定到你的账号")
 
     # 限频防穷举：全局每分钟最多 N 次激活码校验
     now = time.time()
@@ -919,20 +1035,28 @@ def site_code(req: SiteCodeReq):
         return {"ok": False, "error": e.detail}
     if pro_web.is_code_revoked(serial):
         return {"ok": False, "error": "该激活码已作废，请联系作者"}
-    # 同一张码在多台设备各自持票；票据不绑设备、可随意复制保存
+    pro_web.set_user_licence(username, "code", expiry)
     ticket = pro_web.make_ticket("CODE-" + serial.upper(), expiry, "code")
     return {"ok": True, **ticket}
 
 
 @app.get("/api/pro/status")
 def site_status(request: Request):
-    """前端启动时探测：是否付费模式 + 本机票据是否有效。"""
+    """前端启动时探测：付费模式 + 当前账号状态（登录/会员/剩余额度）。"""
     if not SITE_PAID_MODE:
         return {"site_paid": False}
     from . import pro_web
 
-    auth = pro_web.check_request_auth(request)
-    return {"site_paid": True, "licensed": bool(auth), "expiry": (auth or {}).get("expiry", "")}
+    user = pro_web.session_user(request.headers.get("x-seeglow-session", ""))
+    if not user:
+        return {"site_paid": True, "licensed": False, "user": None,
+                "trial_per_day": pro_web.TRIAL_PER_DAY,
+                "uses_left": 0}
+    expiry = pro_web.user_licence_expiry(user)
+    return {"site_paid": True, "user": user,
+            "licensed": bool(expiry), "expiry": expiry,
+            "trial_per_day": pro_web.TRIAL_PER_DAY,
+            "uses_left": (None if expiry else pro_web.quota_left(user))}
 
 
 # ---------------- 期末冲刺：教师资料上传 + 备考融合 ----------------
@@ -1096,7 +1220,7 @@ def study_pack(req: StudyPackReq, request: Request):
 
     if PUBLIC_MODE:
         _check_file_access(req.file, request, req.token)
-    require_paid(request)
+    require_paid(request, consume=True)
     base = _output_dir().resolve()
     md_path = (base / req.file).resolve()
     if md_path.parent != base or not md_path.exists():
@@ -1183,7 +1307,7 @@ async def study_pack_standalone(request: Request, files: list[UploadFile] = File
     import tempfile as _tf
     import os as _os
 
-    require_paid(request)
+    require_paid(request, consume=True)
     files = [f for f in files if f and (f.filename or "").strip()]
     template_files = [f for f in (template_files or []) if f and (f.filename or "").strip()]
     if not files and not template_files:
