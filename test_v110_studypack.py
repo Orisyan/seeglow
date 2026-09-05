@@ -61,11 +61,13 @@ def main():
     summarize.LLMClient = FakeLLM
     c = TestClient(web.app)
 
-    # 激活票据
+    # 激活票据（需先注册登录）
+    r = c.post("/api/auth/register", json={"username": "studyuser", "password": "secret123"})
+    sess = {"X-SeeGlow-Session": r.json()["token"]}
     code = pro_web.make_web_code("lifetime")
-    d = c.post("/api/pro/code", json={"code": code}).json()
+    d = c.post("/api/pro/code", json={"code": code}, headers=sess).json()
     assert d["ok"], d
-    headers = {"X-SeeGlow-Auth": J.dumps({k: d[k] for k in ("kind", "uid", "expiry", "sig")})}
+    headers = {**sess, "X-SeeGlow-Auth": J.dumps({k: d[k] for k in ("kind", "uid", "expiry", "sig")})}
 
     # 1. 上传教师 PPT（清掉上次运行残留的同名记录）
     make_pptx(TMP / "t1.pptx", "老师强调")
@@ -117,13 +119,13 @@ def main():
     finally:
         summarize.LLMClient = orig
 
-    # 5. 未授权拦截
+    # 5. 未授权拦截（匿名 → 401 要求登录）
     r = c.post("/api/study_pack", json={"file": note_name, "mode": "fuse"})
-    assert r.status_code == 402, r.status_code
+    assert r.status_code == 401, r.status_code
     r = c.post("/api/upload_doc", files={"file": ("x.pptx", b"x")},
                data={"note_file": note_name})
-    assert r.status_code == 402, r.status_code
-    print("[ok] 未授权访问期末冲刺接口 → 402")
+    assert r.status_code == 401, r.status_code
+    print("[ok] 未登录访问期末冲刺接口 → 401")
 
     # 6. 独立模式：不依赖任何视频笔记，直接传资料出知识梳理/押题卷
     calls.clear()
