@@ -41,6 +41,9 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .ask input:focus{border-color:var(--accent);background:#fffdf8}
 .ask .go{flex-shrink:0;border:none;border-radius:12px;padding:0 30px;font-size:15px;font-weight:600;color:#fff;cursor:pointer;font-family:inherit;letter-spacing:.06em;
   background:linear-gradient(135deg,var(--accent),var(--accent2));transition:filter .15s, transform .05s}
+.ask .go.alt{background:var(--hover);color:var(--ink);border:1.5px solid var(--line)}
+.ask .go.alt:hover{border-color:#c4c4c8}
+@media(max-width:640px){.ask .go.alt{width:auto;padding:11px 22px}}
 .ask .go:hover{filter:brightness(1.06)}
 .ask .go:active{transform:scale(.98)}
 .ask .go:disabled{opacity:.45;cursor:not-allowed}
@@ -221,6 +224,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
     <span style="display:flex;gap:10px;align-items:center">
       <button class="btn-chip" id="feedChip" onclick="openFeed()" style="display:none">追更</button>
       <button class="btn-chip" id="proChip" style="display:none" onclick="openActivate()">试用</button>
+      <button class="btn-chip" id="authChip" style="display:none" onclick="openAuth()">登录 / 注册</button>
       <button class="btn-chip" onclick="openSettings()">设置</button>
     </span>
   </header>
@@ -235,6 +239,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
         <div class="ask" id="askRow">
           <input id="url" placeholder="粘贴 B 站视频链接或 BV 号，一键生成总结笔记" autocomplete="off"
                  onkeydown="if(event.key==='Enter')start()">
+          <button class="go alt" id="speedBtn" onclick="startSpeed()" title="直接生成：必会知识点+考点预测+自测题+记忆锚点">⚡ 速学模式</button>
           <button class="go" id="startBtn" onclick="start()">开始总结</button>
         </div>
         <div class="hint" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
@@ -337,6 +342,25 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
     </aside>
   </div>
 </div>
+
+<dialog id="authDlg">
+  <input type="hidden" id="authMode" value="login">
+  <h3 id="authTitle">登录拾光</h3>
+  <div class="frow"><label>用户名（2~24 位，中英文/数字/下划线）</label>
+    <input id="authUser" autocomplete="username" onkeydown="if(event.key==='Enter')doAuth()"></div>
+  <div class="frow"><label>密码（至少 6 位）</label>
+    <input id="authPass" type="password" autocomplete="current-password"
+           onkeydown="if(event.key==='Enter')doAuth()"></div>
+  <div id="authMsg" style="min-height:20px;font-size:13px;margin:4px 0"></div>
+  <div class="dlg-foot">
+    <button onclick="authDlg.close()">关闭</button>
+    <button class="pri" id="authBtn" onclick="doAuth()">登 录</button>
+  </div>
+  <div class="note" style="margin-top:16px">
+    <a href="javascript:void(0)" onclick="switchAuthMode($('authMode').value==='login'?'register':'login')" id="authSwitch">还没有账号？注册一个 →</a>
+    · 注册每日免费体验 3 次，次日自动恢复
+  </div>
+</dialog>
 
 <dialog id="actDlg">
   <h3 id="actTitle">激活拾光</h3>
@@ -566,13 +590,13 @@ function deviceId(){
 }
 function loadLicense(){try{LICENSE=JSON.parse(localStorage.getItem("seeglowTicket")||"{}")}catch(e){LICENSE={}}return LICENSE}
 function saveLicense(t){localStorage.setItem("seeglowTicket",JSON.stringify(t));LICENSE=t}
+let SESSION=localStorage.getItem("seeglowSession")||"";
+function saveSession(t){SESSION=t||"";if(t)localStorage.setItem("seeglowSession",t);else localStorage.removeItem("seeglowSession")}
 function authHeaders(extra){
   const h=extra||{};
   loadLicense();
-  if(SITE_PAID&&LICENSE.uid){
-    h["X-SeeGlow-Auth"]=JSON.stringify(LICENSE);
-    h["X-SeeGlow-Device"]=deviceId();
-  }
+  if(SITE_PAID&&LICENSE.uid)h["X-SeeGlow-Auth"]=JSON.stringify(LICENSE);
+  if(SITE_PAID&&SESSION)h["X-SeeGlow-Session"]=SESSION;
   return h;
 }
 async function checkLicense(){
@@ -601,13 +625,75 @@ async function api(path,opts){
   opts.headers=authHeaders(opts.headers);
   const r=await fetch(path,opts);
   if(!r.ok){let msg="请求失败 "+r.status;try{msg=(await r.json()).detail||msg}catch(e){}
-    if(r.status===402){openActivate(msg);throw new Error(msg||"需要激活")}
-    if(r.status===401){dropLicense();openActivate(msg||"授权失效，请重新激活");throw new Error(msg)}
+    if(r.status===401){openAuth(msg);throw new Error(msg||"请先登录")}
+    if(r.status===402){SITE_PAID?openAuth(msg):openActivate(msg);throw new Error(msg||"需要激活")}
     throw new Error(msg)}
   return r.json();
 }
 
 function dropLicense(){localStorage.removeItem("seeglowTicket");LICENSE={}}
+
+/* ---------- 用户系统：登录 / 注册 / 账号状态 ---------- */
+let AUTH={user:null,licensed:false,expiry:"",uses_left:0};
+async function loadAuth(){
+  if(!SITE_PAID){$("authChip").style.display="none";return}
+  try{
+    const r=await fetch("/api/auth/me",{headers:authHeaders()});
+    AUTH=await r.json();
+  }catch(e){return}
+  const chip=$("authChip");
+  chip.style.display="";
+  chip.classList.remove("warn","ok");
+  if(AUTH.user){
+    if(AUTH.licensed){chip.textContent=`👤 ${AUTH.user} · 会员至 ${AUTH.expiry}`;chip.classList.add("ok")}
+    else{chip.textContent=`👤 ${AUTH.user} · 今日剩 ${AUTH.uses_left??0} 次`}
+  }else{
+    chip.textContent="登录 / 注册（每日免费 3 次）";chip.classList.add("warn");
+  }
+}
+function openAuth(msg){
+  authDlg.showModal();
+  const t=$("authMsg");
+  if(msg){t.textContent=msg;t.style.color="var(--err)"}
+  else{t.textContent="";t.style.color=""}
+  switchAuthMode($("authMode").value);
+}
+function switchAuthMode(m){
+  $("authMode").value=m;
+  $("authTitle").textContent=m==="login"?"登录拾光":"注册拾光账号";
+  $("authSwitch").textContent=m==="login"?"还没有账号？注册一个 →":"已有账号？去登录 →";
+  $("authBtn").textContent=m==="login"?"登 录":"注 册（每日免费 3 次）";
+}
+async function doAuth(){
+  const m=$("authMsg");
+  const u=$("authUser").value.trim(), p=$("authPass").value;
+  if(!u||!p){m.textContent="请输入用户名和密码";m.style.color="var(--err)";return}
+  m.textContent="请稍候…";m.style.color="";
+  try{
+    const mode=$("authMode").value;
+    const r=await fetch("/api/auth/"+mode,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({username:u,password:p})});
+    const d=await r.json();
+    if(!d.ok){m.textContent=d.error||"失败";m.style.color="var(--err)";return}
+    saveSession(d.token);
+    m.textContent=(mode==="register"?"注册成功！已赠送今日体验额度。":"登录成功")+" 正在进入…";
+    m.style.color="#15803d";
+    setTimeout(()=>{authDlg.close();location.reload()},900);
+  }catch(e){m.textContent="网络错误："+e.message;m.style.color="var(--err)"}
+}
+async function doLogout(){
+  await fetch("/api/auth/logout",{method:"POST",headers:authHeaders()}).catch(()=>{});
+  saveSession("");
+  location.reload();
+}
+function startSpeed(){
+  if(!SITE_PAID||AUTH.user){
+    $("styleSel").value="speed";
+    start();
+  }else{
+    openAuth("⚡ 速学模式需要先登录：注册即送每日 3 次免费体验");
+  }
+}
 
 function ensureCred(){
   if(SITE_PAID)return true;   // 网站付费模式：官方 API 代答，无需 BYOK
@@ -643,7 +729,8 @@ async function loadPro(){
 }
 function openActivate(errMsg){
   if(SITE_PAID){
-    // 网站付费模式：赞助/激活码解锁（激活码不绑设备，机器码行隐藏）
+    // 网站付费模式：激活绑定账号——未登录先去登录/注册
+    if(!AUTH.user){openAuth("激活前请先注册/登录（激活会绑定到你的账号）");return}
     $("actMcRow").style.display="none";
     $("actOnlineRow").style.display="block";
     if(errMsg){$("actMsg").textContent=errMsg;$("actMsg").style.color="var(--err)"}
@@ -672,14 +759,15 @@ async function doActivate(kind){
   m.textContent="正在验证…";m.style.color="var(--sub)";
   try{
     if(SITE_PAID){
-      // 网站版：走服务器激活接口，成功后保存票据（不绑设备，多设备共用同一码）
+      // 网站版：激活绑定到登录账号（服务端记录有效期），并保存票据兼容
       const ep=kind==="order"?"/api/pro/order":"/api/pro/code";
       const body=kind==="order"?{order_no:val}:{code:val};
-      const r=await fetch(ep,{method:"POST",headers:{"Content-Type":"application/json"},
+      const r=await fetch(ep,{method:"POST",headers:authHeaders({"Content-Type":"application/json"}),
         body:JSON.stringify(body)});
+      if(r.status===401){authDlg.showModal();openAuth("请先注册/登录，激活会绑定到你的账号");return}
       const d=await r.json();
       if(d.ok){saveLicense({kind:d.kind,uid:d.uid,expiry:d.expiry,sig:d.sig});
-        m.innerHTML=`激活成功！${d.expiry>="9000"?"永久有效":("有效期至 "+d.expiry)}。<br>💡 这张激活码可在手机/电脑等多台设备使用，请妥善保存。`;
+        m.innerHTML=`激活成功！${d.expiry>="9000"?"永久有效":("有效期至 "+d.expiry)}。已绑定到账号 ${AUTH.user||""}。`;
         m.style.color="#15803d";
         setTimeout(()=>{actDlg.close();location.reload()},1600)}
       else{m.textContent=d.error||"激活失败";m.style.color="var(--err)"}
@@ -1384,20 +1472,21 @@ askCard.addEventListener("drop",e=>{
     if(d.site_paid){
       SITE_PAID=true;
       $("pubBanner").style.display="block";
-      $("pubBanner").innerHTML=`🌐 官方在线版 · 由服务器 AI 代答，无需自备 Key。
-        爱发电赞助 ¥${d.plan_price||29.9}/月 即可使用
-        （<a href="${d.afdian_url}" target="_blank" style="color:#b45309">afdian.com/a/Orisyan</a>），
-        或用作者发的激活码激活。`;
+      $("pubBanner").innerHTML=`🌐 官方在线版 · AI 由站点提供，无需自备 Key。
+        <b>注册即送每日 3 次免费体验</b>；赞助 ¥${d.plan_price||29.9}/月（
+        <a href="${d.afdian_url}" target="_blank" style="color:#b45309">afdian.com/a/Orisyan</a>）
+        或使用激活码即不限次数。`;
       $("historyCard").style.display="none";
-      // 付费模式下默认展示订单验证入口
       $("actOnlineRow").style.display="block";
-      loadLicense();
-      const s=await checkLicense();
-      if(s.licensed){
-        const expTxt = s.expiry>="9000" ? "永久" : s.expiry;
-        $("pubBanner").innerHTML=`✅ 已激活 · ${expTxt} · 官方 API 已就绪`;
+      await loadAuth();
+      if(AUTH.licensed){
+        $("pubBanner").innerHTML=`✅ ${AUTH.user} · 会员有效期至 ${AUTH.expiry} · 官方 API 已就绪 · <a href="javascript:void(0)" onclick="doLogout()" style="color:#15803d">退出登录</a>`;
         $("pubBanner").style.background="#f0fdf4";$("pubBanner").style.borderColor="#bbf7d0";$("pubBanner").style.color="#15803d";
+      }else if(AUTH.user){
+        $("pubBanner").innerHTML=`👤 ${AUTH.user} · 今日剩余 ${AUTH.uses_left} 次免费体验（明天自动恢复） · <a href="javascript:void(0)" onclick="openActivate()" style="color:#b45309">升级会员</a> · <a href="javascript:void(0)" onclick="doLogout()" style="color:#b45309">退出</a>`;
+        $("pubBanner").style.background="#fff7ed";$("pubBanner").style.borderColor="#fdba74";$("pubBanner").style.color="#9a3412";
       }
+    }
     }
   }catch(e){}
 })();
