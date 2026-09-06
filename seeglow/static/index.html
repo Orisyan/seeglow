@@ -432,32 +432,71 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 <dialog id="settingsDlg">
   <h3>设置</h3>
   <div id="setHint" style="font-size:12.5px;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:8px 12px;margin-bottom:14px;display:none"></div>
-  <div class="frow"><label>服务商预设（自动填好地址与推荐模型）</label>
-    <select id="cfg_provider" onchange="applyPreset()">
-      <option value="siliconflow">硅基流动（国内快，推荐）</option>
-      <option value="openai">OpenAI</option>
-      <option value="custom">自定义</option>
-    </select></div>
-  <div class="frow"><label>API 地址</label>
-    <input id="cfg_api_base" placeholder="https://api.siliconflow.cn/v1"></div>
-  <div class="frow"><label>API Key（留空不修改；当前 <span id="keyNow">未配置</span>）</label>
-    <input id="cfg_api_key" type="password" placeholder="sk-..."></div>
-  <div class="frow"><label>模型名称（需支持音频输入）</label>
-    <input id="cfg_model" placeholder="Qwen/Qwen3-Omni-30B-A3B-Instruct"></div>
-  <div class="frow"><label>温度（0 ~ 1）</label>
-    <input id="cfg_temperature" type="number" step="0.1" min="0" max="1" value="0.3"></div>
-  <div class="frow"><label>B站 Cookie SESSDATA（可选；当前 <span id="sdNow">未配置</span>）</label>
-    <input id="cfg_sessdata" type="password" placeholder="留空不修改"></div>
+
+  <!-- 生成偏好（两种模式都显示） -->
   <div class="frow">
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ink);font-size:13.5px">
-      <input id="cfg_vision" type="checkbox" style="width:auto;flex-shrink:0">
+      <input id="pref_vision" type="checkbox" style="width:auto;flex-shrink:0"
+             onchange="syncPrefNotes()">
       <span>画面理解：AI 同时「看」视频画面</span>
     </label>
     <div style="font-size:11.5px;color:#a1a1aa;margin-top:5px;line-height:1.6">
       适合速成课、教程等有板书/题目的视频：逐字转写屏幕上的题目、选项、公式与板书。
-      需模型支持图片输入（Qwen3-Omni 支持）；仅在无字幕视频（AI 直听）时生效，更耗 token。
+      仅在 AI 直听（无字幕视频/本地文件）时生效，更耗额度。
     </div>
   </div>
+  <div class="frow">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ink);font-size:13.5px">
+      <input id="pref_sound" type="checkbox" style="width:auto;flex-shrink:0">
+      <span>生成完成时播放提示音</span>
+    </label>
+  </div>
+  <div class="frow">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ink);font-size:13.5px">
+      <input id="pref_danmaku" type="checkbox" style="width:auto;flex-shrink:0" checked>
+      <span>总结结果下方显示弹幕高能时间轴</span>
+    </label>
+  </div>
+
+  <!-- API 配置（仅私有/本地模式显示） -->
+  <div id="apiCfgSection" style="display:none">
+    <div style="border-top:1px solid var(--line);margin:22px 0 18px"></div>
+    <div class="frow"><label>服务商预设（自动填好地址与推荐模型）</label>
+      <select id="cfg_provider" onchange="applyPreset()">
+        <option value="siliconflow">硅基流动（国内快，推荐）</option>
+        <option value="openai">OpenAI</option>
+        <option value="custom">自定义</option>
+      </select></div>
+    <div class="frow"><label>API 地址</label>
+      <input id="cfg_api_base" placeholder="https://api.siliconflow.cn/v1"></div>
+    <div class="frow"><label>API Key（留空不修改；当前 <span id="keyNow">未配置</span>）</label>
+      <input id="cfg_api_key" type="password" placeholder="sk-..."></div>
+    <div class="frow"><label>模型名称（需支持音频输入）</label>
+      <input id="cfg_model" placeholder="Qwen/Qwen3-Omni-30B-A3B-Instruct"></div>
+    <div class="frow"><label>温度（0 ~ 1）</label>
+      <input id="cfg_temperature" type="number" step="0.1" min="0" max="1" value="0.3"></div>
+    <div class="frow"><label>B站 Cookie SESSDATA（可选；当前 <span id="sdNow">未配置</span>）</label>
+      <input id="cfg_sessdata" type="password" placeholder="留空不修改"></div>
+  </div>
+
+  <!-- 账号快捷入口（仅站点模式显示） -->
+  <div id="acctSection" style="display:none">
+    <div style="border-top:1px solid var(--line);margin:22px 0 18px"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <a class="btn pri" href="/me" style="text-decoration:none">会员与激活 · 我的主页 →</a>
+      <span style="font-size:12.5px;color:var(--sub)">会员状态、额度与激活都在个人主页管理</span>
+    </div>
+  </div>
+
+  <!-- 本地数据（仅站点模式显示） -->
+  <div id="dataSection" style="display:none">
+    <div style="border-top:1px solid var(--line);margin:22px 0 18px"></div>
+    <div class="frow"><label>本地数据</label>
+      <button class="btn ghost" onclick="clearLocalData()">清除本地偏好缓存</button>
+      <div style="font-size:11.5px;color:#a1a1aa;margin-top:5px">清除上面的偏好设置，不影响账号与云端笔记</div>
+    </div>
+  </div>
+
   <div class="dlg-foot">
     <button onclick="settingsDlg.close()">取消</button>
     <button class="pri" onclick="saveSettings()">保存设置</button>
@@ -854,7 +893,7 @@ async function startBatchFromPicker(){
 async function runBatch(items){
   if(!ensureCred())return;
   try{
-    const body={items:items.map(v=>({bvid:v.bvid,title:v.title})),style:window.curStyle||"general",cred:credPayload()};
+    const body={items:items.map(v=>({bvid:v.bvid,title:v.title})),style:window.curStyle||"general",cred:credPayload(),vision:prefVision()};
     const d=await api("/api/start_batch",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify(body)});
     window.curVideo=null;
@@ -870,6 +909,7 @@ async function uploadFile(file){
   const fd=new FormData();
   fd.append("file",file);
   fd.append("style","general");
+  fd.append("vision",prefVision()?"1":"");
   const c=credPayload();
   if(c){fd.append("api_base",c.api_base||"");fd.append("api_key",c.api_key);fd.append("model",c.model||"")}
   $("resultCard").style.display="none";$("startBtn").disabled=true;
@@ -891,7 +931,7 @@ async function startRun(allPages){
   if(!ensureCred())return;
   $("pagePicker").style.display="none";
   try{
-    const body={url:pickedUrl,style:window.curStyle||"general",cred:credPayload()};
+    const body={url:pickedUrl,style:window.curStyle||"general",cred:credPayload(),vision:prefVision()};
     if(!allPages)body.page=parseInt($("pageSel").value)||1;
     body.all_pages=!!allPages;
     const d=await api("/api/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -915,6 +955,7 @@ async function poll(){
     if(t.status==="done"){
       clearInterval(pollTimer);currentTask=null;$("startBtn").disabled=false;resetStopBtn();
       $("progressCard").style.display="none";
+      if(prefSound())playDoneSound();
       showResult(t.result);
     }else if(t.status==="error"||t.status==="stopped"){
       clearInterval(pollTimer);currentTask=null;$("startBtn").disabled=false;resetStopBtn();
@@ -1022,6 +1063,7 @@ function enhanceStudyPack(){
 /* ---------- 弹幕高能时间轴 ---------- */
 async function loadDanmaku(res){
   const w=$("dmWrap");
+  if(!prefDanmaku()){w.style.display="none";return}
   if(!res||!res.bvid){w.style.display="none";return}
   try{
     const d=await api(`/api/danmaku?bvid=${res.bvid}&cid=${res.cid||0}&duration=${res.duration_sec||0}`);
@@ -1268,23 +1310,36 @@ async function viewFile(enc){
   }catch(e){showErr(e.message)}
 }
 
+/* ---------- 设置（偏好存本地；API 配置仅私有模式） ---------- */
+function prefVision(){return localStorage.getItem("sgVision")==="1"}
+function prefSound(){return localStorage.getItem("sgSound")==="1"}
+function prefDanmaku(){return localStorage.getItem("sgDanmaku")!=="0"}  // 默认开
+function syncPrefNotes(){
+  // 联动说明文案：画面理解仅直听路径生效
+}
 async function openSettings(){
   settingsDlg.showModal();
   const hint=$("setHint");
   hint.style.display="none";hint.textContent="";
-  if(PUBLIC_MODE){
-    // 公共模式：读写浏览器本地凭据，不碰服务器配置
-    hint.style.display="block";
-    hint.textContent="公共部署站：以下配置只保存在此设备的浏览器里（localStorage），不会上传服务器；每次总结随请求携带。";
-    const c=loadLocalCred();
-    $("cfg_provider").value=detectProvider(c.api_base||"");
-    $("cfg_api_base").value=c.api_base||"";
-    $("cfg_model").value=c.model||"Qwen/Qwen3-Omni-30B-A3B-Instruct";
-    $("cfg_temperature").value=c.temperature??0.3;
-    $("keyNow").textContent=c.api_key?("已保存（"+c.api_key.slice(0,5)+"***）"):"未配置";
-    $("sdNow").textContent="公共站不支持";
+  // 偏好区通用读取
+  $("pref_vision").checked=prefVision();
+  $("pref_sound").checked=prefSound();
+  $("pref_danmaku").checked=prefDanmaku();
+
+  if(PUBLIC_MODE||SITE_PAID){
+    // 站点模式：AI 由站点提供，隐藏 API 区；显示账号入口与本地数据
+    $("apiCfgSection").style.display="none";
+    $("acctSection").style.display=SITE_PAID?"":"none";
+    $("dataSection").style.display="";
+    if(SITE_PAID&&!AUTH.user){
+      hint.style.display="block";
+      hint.textContent="提示：先登录再使用；注册每日免费体验 3 次。";
+    }
     return;
   }
+  $("apiCfgSection").style.display="";
+  $("acctSection").style.display="none";
+  $("dataSection").style.display="none";
   try{
     const d=await api("/api/config");
     const c=d.config||d;
@@ -1299,18 +1354,13 @@ async function openSettings(){
 }
 
 async function saveSettings(){
-  if(PUBLIC_MODE){
-    const c={
-      api_base:$("cfg_api_base").value.trim(),
-      api_key:$("cfg_api_key").value.trim(),
-      model:$("cfg_model").value.trim()||"Qwen/Qwen3-Omni-30B-A3B-Instruct",
-      temperature:parseFloat($("cfg_temperature").value)||0.3
-    };
-    if(!c.api_key){alert("请输入 API Key");return}
-    saveLocalCred(c);
-    $("keyNow").textContent="已保存（"+c.api_key.slice(0,5)+"***）";
-    settingsDlg.close();$("cfg_api_key").value="";
-    showErr("");
+  // 偏好（两模式通用）存本地
+  localStorage.setItem("sgVision",$("pref_vision").checked?"1":"0");
+  localStorage.setItem("sgSound",$("pref_sound").checked?"1":"0");
+  localStorage.setItem("sgDanmaku",$("pref_danmaku").checked?"1":"0");
+
+  if(PUBLIC_MODE||SITE_PAID){
+    settingsDlg.close();
     return;
   }
   const body={
@@ -1326,6 +1376,22 @@ async function saveSettings(){
     await api("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     settingsDlg.close();$("cfg_api_key").value="";$("cfg_sessdata").value="";
   }catch(e){alert("保存失败："+e.message)}
+}
+function clearLocalData(){
+  ["sgVision","sgSound","sgDanmaku","seeglowCred","openNote"].forEach(k=>localStorage.removeItem(k));
+  $("pref_vision").checked=false;$("pref_sound").checked=false;$("pref_danmaku").checked=true;
+  alert("本地偏好已清除");
+}
+function playDoneSound(){
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.frequency.value=880;
+    g.gain.setValueAtTime(.18,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.6);
+    o.start();o.stop(ctx.currentTime+.6);
+  }catch(e){}
 }
 
 /* ---------- 期末冲刺：资料上传 + 备考融合 ---------- */
