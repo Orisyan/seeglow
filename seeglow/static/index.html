@@ -11,7 +11,11 @@
   --accent:#f59e0b; --accent2:#f97316; --err:#dc2626; --hover:#fafafa;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--ink);
+body{background:
+  radial-gradient(900px 400px at 85% -60px,rgba(245,158,11,.10),transparent 60%),
+  radial-gradient(700px 340px at -10% 120px,rgba(249,115,22,.07),transparent 60%),
+  #fff;
+  color:var(--ink);
   font-family:"PingFang SC","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;
   font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1080px;margin:0 auto;padding:0 24px 80px}
@@ -21,13 +25,14 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .logo{display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
 .logo .name{font-size:20px;font-weight:700;letter-spacing:.04em;line-height:1.2}
 .logo .slogan{font-size:11.5px;color:var(--sub);letter-spacing:.06em}
-.btn-chip{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:8px 20px;font-size:13.5px;color:var(--sub);cursor:pointer;font-family:inherit;transition:.15s}
-.btn-chip:hover{color:var(--ink);border-color:#c4c4c8}
+.btn-chip{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:8px 20px;font-size:13.5px;color:var(--sub);cursor:pointer;font-family:inherit;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.btn-chip:hover{color:var(--ink);border-color:#c4c4c8;transform:translateY(-1px)}
 .btn-chip.warn{color:#b45309;border-color:#fcd34d;background:#fffbeb}
 .btn-chip.ok{color:#15803d;border-color:#bbf7d0;background:#f0fdf4}
 
 /* cards */
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.05),0 8px 28px -14px rgba(0,0,0,.08)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;
+  box-shadow:0 1px 3px rgba(0,0,0,.05),0 12px 34px -18px rgba(0,0,0,.12)}
 
 /* layout */
 .grid{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:22px}
@@ -40,13 +45,16 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .ask input::placeholder{color:#a1a1aa}
 .ask input:focus{border-color:var(--accent);background:#fffdf8}
 .ask .go{flex-shrink:0;border:none;border-radius:12px;padding:0 30px;font-size:15px;font-weight:600;color:#fff;cursor:pointer;font-family:inherit;letter-spacing:.06em;
-  background:linear-gradient(135deg,var(--accent),var(--accent2));transition:filter .15s, transform .05s}
-.ask .go.alt{background:var(--hover);color:var(--ink);border:1.5px solid var(--line)}
+  background:linear-gradient(135deg,var(--accent),var(--accent2));transition:filter .15s, transform .05s, box-shadow .15s;
+  box-shadow:0 6px 16px -6px rgba(249,115,22,.5)}
+.ask .go.alt{background:var(--hover);color:var(--ink);border:1.5px solid var(--line);box-shadow:none}
 .ask .go.alt:hover{border-color:#c4c4c8}
 @media(max-width:640px){.ask .go.alt{width:auto;padding:11px 22px}}
-.ask .go:hover{filter:brightness(1.06)}
+.ask .go:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.ask .go.alt:hover{transform:none;filter:none}
 .ask .go:active{transform:scale(.98)}
-.ask .go:disabled{opacity:.45;cursor:not-allowed}
+.ask .go:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.ask input:focus{box-shadow:0 0 0 3px rgba(245,158,11,.15)}
 .hint{margin-top:14px;font-size:12.5px;color:#a1a1aa}
 
 .picker{display:none;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap;background:var(--hover);border:1px dashed var(--accent);padding:12px 14px;border-radius:12px}
@@ -111,8 +119,12 @@ aside{position:sticky;top:20px;align-self:start}.side-card{padding:20px}
 .empty{font-size:12.5px;color:#a1a1aa}
 
 /* dialog */
-dialog{background:var(--card);color:var(--ink);border:none;border-radius:18px;padding:32px;width:min(480px,92vw);box-shadow:0 24px 70px rgba(0,0,0,.22)}
-dialog::backdrop{background:rgba(24,24,27,.35)}
+dialog{position:fixed;inset:0;margin:auto;background:var(--card);color:var(--ink);border:none;
+  border-radius:20px;padding:32px;width:min(480px,92vw);
+  box-shadow:0 24px 70px rgba(0,0,0,.22);
+  animation:dlgIn .22s ease}
+dialog::backdrop{background:rgba(24,24,27,.4);backdrop-filter:blur(3px)}
+@keyframes dlgIn{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
 dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 .frow{margin-bottom:18px}
 .frow label{display:block;font-size:12.5px;color:var(--sub);margin-bottom:6px}
@@ -1230,8 +1242,11 @@ async function ask(){
 
 async function loadHistory(){
   try{
-    const list=await api("/api/history");
+    const r=await fetch("/api/history",{headers:authHeaders()});
     const el=$("historyList");
+    if(r.status===401||r.status===403){
+      el.innerHTML='<div class="empty">登录后可查看我的笔记</div>';return}
+    const list=await r.json();
     if(!list.length){el.innerHTML='<div class="empty">暂无记录</div>';return}
     el.innerHTML=list.map(f=>{
       const d=new Date(f.mtime*1000);
@@ -1464,7 +1479,9 @@ askCard.addEventListener("drop",e=>{
   if(q){$("url").value=q;setTimeout(start,300)}
 })();
 
-/* ---------- 公共模式探测 ---------- */
+/* ---------- 公共模式探测（其余启动逻辑等它完成再跑） ---------- */
+let siteModeReadyResolve;
+const siteModeReady=new Promise(r=>siteModeReadyResolve=r);
 (async function(){
   try{
     const r=await fetch("/api/config");
@@ -1491,20 +1508,23 @@ askCard.addEventListener("drop",e=>{
       }
     }
   }catch(e){}
+  siteModeReadyResolve();
 })();
 
-// 从「我的主页」点“打开”来的笔记
+/* 其余启动逻辑：等站点模式确定后再执行（避免带错请求头触发 401 弹窗） */
 (async function(){
-  const on=localStorage.getItem("openNote");
-  if(!on)return;
-  localStorage.removeItem("openNote");
-  await new Promise(r=>setTimeout(r,400));   // 等 SITE_PAID 探测完成
-  try{viewFile(on)}catch(e){}
-})();
+  await siteModeReady;
+  loadHistory();
+  loadPro();
+  $("feedChip").style.display="";
 
-loadHistory();
-loadPro();
-$("feedChip").style.display="";
+  // 从「我的主页」点“打开”来的笔记
+  const on=localStorage.getItem("openNote");
+  if(on){
+    localStorage.removeItem("openNote");
+    try{viewFile(on)}catch(e){}
+  }
+})();
 </script>
 </body>
 </html>
