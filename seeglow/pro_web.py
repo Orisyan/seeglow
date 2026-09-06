@@ -377,3 +377,24 @@ def consume_quota(username: str) -> int:
     used += 1
     _store_put(k, used)
     return TRIAL_PER_DAY - used
+
+
+# ---------------- 用户笔记归属（我的主页用） ----------------
+
+def add_user_note(username: str, fname: str):
+    """把生成的笔记登记到账号名下（我的主页列表 + 归属校验）。"""
+    if not username or not fname:
+        return
+    key = "notes:" + username
+    lst = list(_store_get(key) or [])
+    if fname not in lst:
+        lst.insert(0, fname)
+        _store_put(key, lst[:300])
+
+
+def get_user_notes(username: str) -> list:
+    return list(_store_get("notes:" + (username or "")) or [])
+
+
+def user_owns_note(username: str, fname: str) -> bool:
+    return fname in get_user_notes(username)
