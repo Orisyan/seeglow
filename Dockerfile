@@ -24,4 +24,5 @@ ENV SEELOW_PUBLIC=1 \
 VOLUME ["/data"]
 EXPOSE 8765
 
-CMD ["python", "run_web.py"]
+# 直接以 uvicorn 启动 FastAPI 应用（run_web.py 无参会进入交互模式，不能用于容器）
+CMD ["sh", "-c", "uvicorn seeglow.web:app --host 0.0.0.0 --port ${PORT:-8765}"]
