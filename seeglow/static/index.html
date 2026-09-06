@@ -892,7 +892,8 @@ async function startRun(allPages){
     currentTask=d.task_id;
     window.taskToken=d.token||"";
     if(body.page)window.curVideo={bvid:lastParse.bvid,page:body.page};
-    loadPro();  // 试用消耗后刷新徽标
+    loadPro();      // 试用消耗后刷新徽标
+    loadAuth();     // 账号体系：刷新登录态与剩余额度
     $("resultCard").style.display="none";
     $("startBtn").disabled=true;
     setProgress({stage:"queue",percent:0,message:"排队中…"});
@@ -1486,7 +1487,6 @@ askCard.addEventListener("drop",e=>{
         $("pubBanner").innerHTML=`👤 ${AUTH.user} · 今日剩余 ${AUTH.uses_left} 次免费体验（明天自动恢复） · <a href="javascript:void(0)" onclick="openActivate()" style="color:#b45309">升级会员</a> · <a href="javascript:void(0)" onclick="doLogout()" style="color:#b45309">退出</a>`;
         $("pubBanner").style.background="#fff7ed";$("pubBanner").style.borderColor="#fdba74";$("pubBanner").style.color="#9a3412";
       }
-    }
     }
   }catch(e){}
 })();
