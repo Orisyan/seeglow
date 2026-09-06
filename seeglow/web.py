@@ -222,6 +222,12 @@ def app_page():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/me")
+def me_page():
+    """个人主页（账号中心）。"""
+    return FileResponse(STATIC_DIR / "me.html")
+
+
 @app.post("/api/parse")
 def parse_video(req: ParseReq):
     """解析链接。支持：视频/BV/av/短链（返回视频信息+分P+合集）；
@@ -288,13 +294,18 @@ def start(req: StartReq, request: Request):
     issue_task_token(tid, request)
 
     def job(progress_cb):
-        return pipeline.run_pipeline(
+        result = pipeline.run_pipeline(
             req.url,
             {"page": req.page, "all_pages": req.all_pages, "style": req.style or "general"},
             progress_cb,
             stop_check=lambda: tasks.is_stopped(tid),
             cfg_override=cfg,
         )
+        if auth.get("user"):
+            from . import pro_web
+
+            pro_web.add_user_note(auth["user"], result.get("output_file", ""))
+        return result
 
     tasks.run_in_background(tid, job)
     resp = {"task_id": tid, "token": _task_tokens.get(tid, {}).get("token", "")}
@@ -326,11 +337,19 @@ def start_batch(req: BatchReq, request: Request):
     issue_task_token(tid, request)
 
     def job(progress_cb):
-        return pipeline.run_batch_pipeline(
+        result = pipeline.run_batch_pipeline(
             items, req.style or "general", progress_cb,
             stop_check=lambda: tasks.is_stopped(tid),
             cfg_override=cfg,
         )
+        if auth.get("user"):
+            from . import pro_web
+
+            pro_web.add_user_note(auth["user"], result.get("output_file", ""))
+            for f in result.get("files", []):
+                if f.get("file"):
+                    pro_web.add_user_note(auth["user"], f["file"])
+        return result
 
     tasks.run_in_background(tid, job)
     return {"task_id": tid, "count": len(items)}
@@ -384,9 +403,14 @@ async def start_file(request: Request, file: UploadFile = File(...), style: str 
 
     def job(progress_cb):
         try:
-            return pipeline.run_file_pipeline(dest, title, style, progress_cb,
-                                              stop_check=lambda: tasks.is_stopped(tid),
-                                              cfg_override=cfg)
+            result = pipeline.run_file_pipeline(dest, title, style, progress_cb,
+                                                stop_check=lambda: tasks.is_stopped(tid),
+                                                cfg_override=cfg)
+            if auth.get("user"):
+                from . import pro_web
+
+                pro_web.add_user_note(auth["user"], result.get("output_file", ""))
+            return result
         finally:
             try:
                 dest.unlink()
@@ -470,8 +494,13 @@ def stop_task(tid: str, request: Request, token: str = Query("")):
 
 
 def _check_file_access(fname: str, request: Request, token: str = ""):
-    """公共模式：校验请求者对该笔记文件的访问权（按创建任务的 IP 或令牌）。"""
+    """校验请求者对该笔记文件的访问权：登录账号归属 > 任务令牌 > 同 IP。"""
     if not PUBLIC_MODE:
+        return
+    from . import pro_web
+
+    user = pro_web.session_user(request.headers.get("x-seeglow-session", ""))
+    if user and pro_web.user_owns_note(user, fname):
         return
     with _lock:
         recs = list(_task_tokens.values())
@@ -481,7 +510,7 @@ def _check_file_access(fname: str, request: Request, token: str = ""):
             return
         if r.get("ip") and r.get("ip") == ip:
             return
-    raise HTTPException(403, "请从发起总结的设备访问（或携带任务令牌）")
+    raise HTTPException(403, "无权访问该笔记（请登录 generating 它的账号，或从原设备访问）")
 
 
 class AskReq(BaseModel):
@@ -809,7 +838,21 @@ def _output_dir() -> Path:
 
 @app.get("/api/history")
 def history(request: Request):
-    """私有模式：本机历史列表。公共模式：不暴露别人的笔记列表，返回空。"""
+    """私有模式：本机历史列表。网站模式：返回登录账号名下的笔记。"""
+    if SITE_PAID_MODE:
+        from . import pro_web
+
+        user = pro_web.session_user(request.headers.get("x-seeglow-session", ""))
+        if not user:
+            raise HTTPException(401, "登录后可查看我的笔记")
+        out = []
+        base = _output_dir()
+        for name in pro_web.get_user_notes(user):
+            f = base / name
+            if f.exists():
+                st = f.stat()
+                out.append({"name": name, "size": st.st_size, "mtime": int(st.st_mtime)})
+        return out
     if PUBLIC_MODE:
         return []
     out = []
@@ -1289,6 +1332,11 @@ def study_pack(req: StudyPackReq, request: Request):
         (base / out_name).write_text(f"# {out_name.replace('.md','')}\n\n{text}\n", encoding="utf-8")
     except OSError:
         pass
+    if SITE_PAID_MODE:
+        from . import pro_web
+
+        if auth and auth.get("user"):
+            pro_web.add_user_note(auth["user"], out_name)
     return {"ok": True, "mode": req.mode, "text": text, "output_file": out_name}
 
 
@@ -1430,6 +1478,12 @@ async def study_pack_standalone(request: Request, files: list[UploadFile] = File
     (base / (out_name + ".ctx.json")).write_text(
         _json.dumps({"title": out_name.replace(".md", ""), "url": "", "items": []},
                     ensure_ascii=False), encoding="utf-8")
+    if SITE_PAID_MODE:
+        from . import pro_web
+
+        auth = _auth(request)
+        if auth and auth.get("user"):
+            pro_web.add_user_note(auth["user"], out_name)
     return {"ok": True, "mode": mode, "text": text, "output_file": out_name,
             "notices": notice_msgs[:6]}
 
