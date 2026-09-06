@@ -185,12 +185,14 @@ class StartReq(BaseModel):
     all_pages: bool = False
     style: Optional[str] = "general"
     cred: Optional[dict] = None  # 公共模式：用户自带 API 凭据（可选）
+    vision: Optional[bool] = None  # 用户偏好：画面理解（仅直听路径生效）
 
 
 class BatchReq(BaseModel):
     items: list  # [{"bvid":..., "title":...}]
     style: Optional[str] = "general"
     cred: Optional[dict] = None
+    vision: Optional[bool] = None
 
 
 class FeedReq(BaseModel):
@@ -290,6 +292,8 @@ def start(req: StartReq, request: Request):
             raise HTTPException(400, "本站未提供公共 API Key，请在「设置」里填入你自己的 API 地址与 Key（仅保存在你的浏览器本地）")
     else:
         cfg = load_config()
+    if req.vision is not None:
+        cfg["vision"] = bool(req.vision)  # 用户偏好优先于服务端默认
     tid = tasks.create_task()
     issue_task_token(tid, request)
 
@@ -333,6 +337,8 @@ def start_batch(req: BatchReq, request: Request):
             raise HTTPException(400, "本站未提供公共 API Key，请在「设置」里填入你自己的 API 地址与 Key（仅保存在你的浏览器本地）")
     else:
         cfg = load_config()
+    if req.vision is not None:
+        cfg["vision"] = bool(req.vision)
     tid = tasks.create_task()
     issue_task_token(tid, request)
 
@@ -357,7 +363,8 @@ def start_batch(req: BatchReq, request: Request):
 
 @app.post("/api/start_file")
 async def start_file(request: Request, file: UploadFile = File(...), style: str = Form("general"),
-                     api_base: str = Form(""), api_key: str = Form(""), model: str = Form("")):
+                     api_base: str = Form(""), api_key: str = Form(""), model: str = Form(""),
+                     vision: str = Form("")):
     """总结本地音视频文件（拖拽/选择上传，存临时目录，用完即删）。"""
     import os as _os
     import tempfile as _tf
@@ -374,6 +381,8 @@ async def start_file(request: Request, file: UploadFile = File(...), style: str 
             raise HTTPException(400, "本站未提供公共 API Key，请在「设置」里填入你自己的 API 地址与 Key")
     else:
         cfg = load_config()
+    if vision.strip():
+        cfg["vision"] = vision.strip().lower() in ("1", "true", "on", "yes")
 
     limit = UPLOAD_LIMIT if PUBLIC_MODE else 4 * 1024 * 1024 * 1024
     suffix = "." + (file.filename or "x").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
