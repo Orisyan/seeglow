@@ -398,3 +398,37 @@ def get_user_notes(username: str) -> list:
 
 def user_owns_note(username: str, fname: str) -> bool:
     return fname in get_user_notes(username)
+
+
+# ---------------- 文件持久化存储（容器重启不丢） ----------------
+
+class FileStore:
+    """与 modal.Dict 同接口的 JSON 文件存储，单容器部署用。
+
+    每次写入原子落盘（tmp + replace），读走内存缓存。
+    """
+
+    def __init__(self, path):
+        from pathlib import Path as _P
+
+        self._path = _P(path)
+        self._data = {}
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            if self._path.exists():
+                self._data = json.loads(self._path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            self._data = {}
+
+    def get(self, key, default=None):
+        v = self._data.get(key, default)
+        return default if v is None else v
+
+    def put(self, key, value):
+        self._data[key] = value
+        try:
+            tmp = self._path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self._data, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(self._path)
+        except Exception:
+            pass
