@@ -230,6 +230,16 @@ def me_page():
     return FileResponse(STATIC_DIR / "me.html")
 
 
+@app.get("/terms")
+def terms_page():
+    return FileResponse(STATIC_DIR / "terms.html")
+
+
+@app.get("/privacy")
+def privacy_page():
+    return FileResponse(STATIC_DIR / "privacy.html")
+
+
 @app.post("/api/parse")
 def parse_video(req: ParseReq):
     """解析链接。支持：视频/BV/av/短链（返回视频信息+分P+合集）；
