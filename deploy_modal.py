@@ -57,6 +57,12 @@ def api():
     import sys
 
     sys.path.insert(0, "/root/app")
+
+    # 用户/会话/笔记归属持久化到 Volume：容器重启、重新部署都不丢
+    from seeglow import pro_web
+
+    pro_web.init_store(pro_web.FileStore("/data/seeglow_store.json"))
+
     from seeglow.web import app as fastapi_app
 
     return fastapi_app
