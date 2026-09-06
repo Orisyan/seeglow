@@ -32,26 +32,49 @@ def _ensure_buvid():
         if b3:
             _session.cookies.set("buvid3", b3, domain=".bilibili.com")
             _session.cookies.set("buvid4", b4 or b3, domain=".bilibili.com")
+            _session.cookies.set("b_nut", str(int(time.time())), domain=".bilibili.com")
             _buvid_ready = True
     except Exception:
         pass
+
+
+def _reset_buvid():
+    """风控 412 时重建设备指纹重试。"""
+    global _buvid_ready
+    _buvid_ready = False
+    try:
+        _session.cookies.clear(domain=".bilibili.com")
+    except Exception:
+        pass
+    _ensure_buvid()
 
 
 class BilibiliError(RuntimeError):
     pass
 
 
-def _get(url, params=None, sessdata=""):
+def _get(url, params=None, sessdata="", _retry=0):
     _ensure_buvid()
     headers = dict(BASE_HEADERS)
+    headers["Accept"] = "application/json, text/plain, */*"
+    headers["Accept-Language"] = "zh-CN,zh;q=0.9"
     if sessdata:
         headers["Cookie"] = f"SESSDATA={sessdata}"
     try:
         r = _session.get(url, params=params, headers=headers, timeout=20)
     except requests.RequestException as e:
         raise BilibiliError(f"网络请求失败：{e}") from e
+    # 数据中心 IP 触发风控 412：重建设备指纹后重试一次
+    if r.status_code == 412 and _retry < 2:
+        time.sleep(1 + _retry)
+        _reset_buvid()
+        return _get(url, params, sessdata, _retry=_retry + 1)
     r.raise_for_status()
     data = r.json()
+    if data.get("code") == -412 and _retry < 2:
+        time.sleep(1 + _retry)
+        _reset_buvid()
+        return _get(url, params, sessdata, _retry=_retry + 1)
     if data.get("code") != 0:
         raise BilibiliError(f"B站接口错误 {data.get('code')}: {data.get('message')}")
     return data["data"]
