@@ -224,7 +224,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
     <span style="display:flex;gap:10px;align-items:center">
       <button class="btn-chip" id="feedChip" onclick="openFeed()" style="display:none">追更</button>
       <button class="btn-chip" id="proChip" style="display:none" onclick="openActivate()">试用</button>
-      <button class="btn-chip" id="authChip" style="display:none" onclick="openAuth()">登录 / 注册</button>
+      <button class="btn-chip" id="authChip" style="display:none">登录 / 注册</button>
       <button class="btn-chip" onclick="openSettings()">设置</button>
     </span>
   </header>
@@ -647,8 +647,10 @@ async function loadAuth(){
   if(AUTH.user){
     if(AUTH.licensed){chip.textContent=`👤 ${AUTH.user} · 会员至 ${AUTH.expiry}`;chip.classList.add("ok")}
     else{chip.textContent=`👤 ${AUTH.user} · 今日剩 ${AUTH.uses_left??0} 次`}
+    chip.onclick=()=>location.href="/me";   // 登录态 → 个人主页
   }else{
     chip.textContent="登录 / 注册（每日免费 3 次）";chip.classList.add("warn");
+    chip.onclick=openAuth;
   }
 }
 function openAuth(msg){
@@ -1484,11 +1486,20 @@ askCard.addEventListener("drop",e=>{
         $("pubBanner").innerHTML=`✅ ${AUTH.user} · 会员有效期至 ${AUTH.expiry} · 官方 API 已就绪 · <a href="javascript:void(0)" onclick="doLogout()" style="color:#15803d">退出登录</a>`;
         $("pubBanner").style.background="#f0fdf4";$("pubBanner").style.borderColor="#bbf7d0";$("pubBanner").style.color="#15803d";
       }else if(AUTH.user){
-        $("pubBanner").innerHTML=`👤 ${AUTH.user} · 今日剩余 ${AUTH.uses_left} 次免费体验（明天自动恢复） · <a href="javascript:void(0)" onclick="openActivate()" style="color:#b45309">升级会员</a> · <a href="javascript:void(0)" onclick="doLogout()" style="color:#b45309">退出</a>`;
+        $("pubBanner").innerHTML=`👤 ${AUTH.user} · 今日剩余 ${AUTH.uses_left} 次免费体验（明天自动恢复） · <a href="javascript:void(0)" onclick="location.href='/me'" style="color:#b45309">我的主页</a> · <a href="javascript:void(0)" onclick="openActivate()" style="color:#b45309">升级会员</a> · <a href="javascript:void(0)" onclick="doLogout()" style="color:#b45309">退出</a>`;
         $("pubBanner").style.background="#fff7ed";$("pubBanner").style.borderColor="#fdba74";$("pubBanner").style.color="#9a3412";
       }
     }
   }catch(e){}
+})();
+
+// 从「我的主页」点“打开”来的笔记
+(async function(){
+  const on=localStorage.getItem("openNote");
+  if(!on)return;
+  localStorage.removeItem("openNote");
+  await new Promise(r=>setTimeout(r,400));   // 等 SITE_PAID 探测完成
+  try{viewFile(on)}catch(e){}
 })();
 
 loadHistory();
