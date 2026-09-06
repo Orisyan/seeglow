@@ -257,15 +257,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
         <div class="hint" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <span>支持链接 / BV 号 / av 号 / b23.tv 短链 / 合集与收藏夹链接 · 总结仅保存在本机</span>
           <span style="display:flex;gap:8px;align-items:center">
-            <select id="styleSel" style="background:var(--hover);border:1.5px solid var(--line);border-radius:8px;padding:4px 8px;font-size:12.5px;color:var(--sub);font-family:inherit;outline:none;cursor:pointer">
-              <option value="general">通用笔记</option>
-              <option value="speed">⚡ 速学模式（期末速成）</option>
-              <option value="study">学习笔记</option>
-              <option value="tutorial">教程步骤</option>
-              <option value="meeting">会议纪要</option>
-              <option value="review">轻松杂谈</option>
-            </select>
-            <button class="file-btn hot-btn" onclick="openStudy(false)" title="传老师发的 PPT/往年卷，直接出知识梳理或押题卷">📚 期末冲刺</button>
+            <button class="file-btn" onclick="openStudy(false)">📚 期末冲刺</button>
             <button class="file-btn" onclick="fileInput.click()">📁 本地音视频</button>
             <input type="file" id="fileInput" style="display:none"
                    accept=".mp4,.mkv,.flv,.mov,.avi,.webm,.mp3,.m4a,.wav,.flac,.aac,.ogg,.m4s,.ts"
@@ -702,8 +694,7 @@ async function doLogout(){
 }
 function startSpeed(){
   if(!SITE_PAID||AUTH.user){
-    $("styleSel").value="speed";
-    start();
+    start("speed");
   }else{
     openAuth("⚡ 速学模式需要先登录：注册即送每日 3 次免费体验");
   }
@@ -798,11 +789,12 @@ async function doActivate(kind){
 
 let pickedUrl="",lastParse=null;
 window.curVideo=null;
-async function start(){
+async function start(styleOverride){
   const url=$("url").value.trim();
   if(!url)return showErr("请先粘贴B站视频链接");
   if(!ensureCred())return;
   showErr("");
+  window.curStyle=styleOverride||"general";   // 默认通用；⚡速学按钮传 speed
   try{
     const info=await api("/api/parse",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
     // 收藏夹 / 合集直达链接 → 批量选择器
@@ -862,7 +854,7 @@ async function startBatchFromPicker(){
 async function runBatch(items){
   if(!ensureCred())return;
   try{
-    const body={items:items.map(v=>({bvid:v.bvid,title:v.title})),style:$("styleSel").value,cred:credPayload()};
+    const body={items:items.map(v=>({bvid:v.bvid,title:v.title})),style:window.curStyle||"general",cred:credPayload()};
     const d=await api("/api/start_batch",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify(body)});
     window.curVideo=null;
@@ -877,7 +869,7 @@ async function uploadFile(file){
   showErr("");
   const fd=new FormData();
   fd.append("file",file);
-  fd.append("style",$("styleSel").value);
+  fd.append("style","general");
   const c=credPayload();
   if(c){fd.append("api_base",c.api_base||"");fd.append("api_key",c.api_key);fd.append("model",c.model||"")}
   $("resultCard").style.display="none";$("startBtn").disabled=true;
@@ -899,7 +891,7 @@ async function startRun(allPages){
   if(!ensureCred())return;
   $("pagePicker").style.display="none";
   try{
-    const body={url:pickedUrl,style:$("styleSel").value,cred:credPayload()};
+    const body={url:pickedUrl,style:window.curStyle||"general",cred:credPayload()};
     if(!allPages)body.page=parseInt($("pageSel").value)||1;
     body.all_pages=!!allPages;
     const d=await api("/api/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
