@@ -7,94 +7,102 @@
 <title>拾光 SeeGlow · B站长视频总结</title>
 <style>
 :root{
-  --bg:#f4f4f5; --card:#ffffff; --ink:#18181b; --sub:#71717a; --line:#e4e4e7;
-  --accent:#f59e0b; --accent2:#f97316; --err:#dc2626; --hover:#fafafa;
+  --bg:#fbfbfd; --card:#ffffff; --ink:#1d1d1f; --sub:#6e6e73; --line:#d2d2d7;
+  --accent:#f59e0b; --accent2:#f97316; --err:#dc2626; --hover:#f5f5f7;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:
-  radial-gradient(900px 400px at 85% -60px,rgba(245,158,11,.10),transparent 60%),
-  radial-gradient(700px 340px at -10% 120px,rgba(249,115,22,.07),transparent 60%),
-  #fff;
+body{background:var(--bg);
   color:var(--ink);
-  font-family:"PingFang SC","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;
-  font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro SC","SF Pro Text","PingFang SC",
+    "Helvetica Neue","Microsoft YaHei UI",system-ui,sans-serif;
+  font-size:15px;line-height:1.47059;letter-spacing:-.022em;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .wrap{max-width:1080px;margin:0 auto;padding:0 24px 80px}
 
 /* header */
-header{display:flex;align-items:center;justify-content:space-between;padding:18px 0;margin-bottom:34px;flex-wrap:wrap;gap:12px}
-.logo{display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit}
-.logo .name{font-size:20px;font-weight:700;letter-spacing:.04em;line-height:1.2}
-.logo .slogan{font-size:11.5px;color:var(--sub);letter-spacing:.06em}
-.btn-chip{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:8px 20px;font-size:13.5px;color:var(--sub);cursor:pointer;font-family:inherit;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-.btn-chip:hover{color:var(--ink);border-color:#c4c4c8;transform:translateY(-1px)}
-.btn-chip.warn{color:#b45309;border-color:#fcd34d;background:#fffbeb}
-.btn-chip.ok{color:#15803d;border-color:#bbf7d0;background:#f0fdf4}
+header{
+  position:sticky;top:0;z-index:50;margin:0 -24px 30px;padding:0 24px;
+  display:flex;align-items:center;justify-content:space-between;height:52px;flex-wrap:wrap;gap:12px;
+  background:rgba(251,251,253,.72);
+  backdrop-filter:saturate(180%) blur(20px);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);
+  border-bottom:1px solid rgba(0,0,0,.06);
+}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit}
+.logo .name{font-size:16px;font-weight:600;letter-spacing:-.01em;line-height:1.2}
+.logo .slogan{font-size:11px;color:var(--sub);letter-spacing:0}
+.btn-chip{background:rgba(0,0,0,.045);border:none;border-radius:980px;padding:7px 16px;font-size:13px;color:var(--ink);cursor:pointer;font-family:inherit;transition:.2s;font-weight:500;letter-spacing:-.01em}
+.btn-chip:hover{background:rgba(0,0,0,.08)}
+.btn-chip.warn{background:rgba(245,158,11,.12);color:#9a3412}
+.btn-chip.warn:hover{background:rgba(245,158,11,.2)}
+.btn-chip.ok{background:rgba(21,128,61,.1);color:#15803d}
+.btn-chip.ok:hover{background:rgba(21,128,61,.16)}
 
 /* cards */
-.card{background:var(--card);border:1px solid var(--line);border-radius:20px;
-  box-shadow:0 1px 3px rgba(0,0,0,.05),0 12px 34px -18px rgba(0,0,0,.12)}
+.card{background:var(--card);border-radius:22px;
+  box-shadow:0 4px 24px rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.04)}
 
 /* layout */
 .grid{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:22px}
 @media(max-width:860px){.grid{grid-template-columns:1fr}.grid aside{display:none}}
 
 /* ask card */
-.ask-card{padding:26px}
+.ask-card{padding:30px 28px}
 .ask{display:flex;gap:12px}
-.ask input{flex:1;background:var(--hover);border:1.5px solid var(--line);border-radius:12px;padding:13px 16px;font-size:15.5px;color:var(--ink);outline:none;font-family:inherit;transition:border-color .15s, background .15s}
-.ask input::placeholder{color:#a1a1aa}
-.ask input:focus{border-color:var(--accent);background:#fffdf8}
-.ask .go{flex-shrink:0;border:none;border-radius:12px;padding:0 30px;font-size:15px;font-weight:600;color:#fff;cursor:pointer;font-family:inherit;letter-spacing:.06em;
-  background:linear-gradient(135deg,var(--accent),var(--accent2));transition:filter .15s, transform .05s, box-shadow .15s;
-  box-shadow:0 6px 16px -6px rgba(249,115,22,.5)}
-.ask .go.alt{background:var(--hover);color:var(--ink);border:1.5px solid var(--line);box-shadow:none}
-.ask .go.alt:hover{border-color:#c4c4c8}
+.ask input{flex:1;background:var(--hover);border:1.5px solid transparent;border-radius:14px;padding:14px 18px;font-size:16px;color:var(--ink);outline:none;font-family:inherit;transition:border-color .2s, background .2s, box-shadow .2s;letter-spacing:-.01em}
+.ask input::placeholder{color:#86868b}
+.ask input:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 4px rgba(245,158,11,.12)}
+.ask .go{flex-shrink:0;border:none;border-radius:980px;padding:0 30px;font-size:15px;font-weight:500;color:#fff;cursor:pointer;font-family:inherit;letter-spacing:-.01em;
+  background:var(--accent);transition:background .2s, transform .1s}
+.ask .go.alt{background:rgba(0,0,0,.05);color:var(--ink)}
+.ask .go.alt:hover{background:rgba(0,0,0,.09)}
 @media(max-width:640px){.ask .go.alt{width:auto;padding:11px 22px}}
-.ask .go:hover{filter:brightness(1.06);transform:translateY(-1px)}
-.ask .go.alt:hover{transform:none;filter:none}
+.ask .go:hover{background:#e08c07}
 .ask .go:active{transform:scale(.98)}
-.ask .go:disabled{opacity:.45;cursor:not-allowed;transform:none}
-.ask input:focus{box-shadow:0 0 0 3px rgba(245,158,11,.15)}
-.hint{margin-top:14px;font-size:12.5px;color:#a1a1aa}
+.ask .go:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.hint{margin-top:14px;font-size:12.5px;color:var(--ter)}
 
-.picker{display:none;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap;background:var(--hover);border:1px dashed var(--accent);padding:12px 14px;border-radius:12px}
+.picker{display:none;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap;background:var(--hover);border-radius:14px;padding:14px 16px}
 .picker .pinfo{font-size:13px;color:var(--sub)}
-.picker select{background:#fff;border:1.5px solid var(--line);border-radius:9px;padding:7px 10px;font-size:13px;color:var(--ink);max-width:300px;font-family:inherit;outline:none}
+.picker select{background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:7px 10px;font-size:13px;color:var(--ink);max-width:300px;font-family:inherit;outline:none}
 .picker select:focus{border-color:var(--accent)}
-.picker button{border:none;border-radius:9px;padding:8px 18px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:inherit}
-.picker button:hover{filter:brightness(1.06)}
-.picker button.alt{background:var(--card);color:var(--sub);border:1.5px solid var(--line);font-weight:500}
-.file-btn{background:var(--card);border:1.5px solid var(--line);border-radius:8px;padding:4px 10px;font-size:12.5px;color:var(--sub);cursor:pointer;font-family:inherit}
-.file-btn:hover{color:var(--ink);border-color:#c4c4c8}
-.hot-btn{background:linear-gradient(135deg,#fff7ed,#fffbeb)!important;border-color:#fdba74!important;color:#b45309!important;font-weight:600}
-.hot-btn:hover{box-shadow:0 3px 10px -4px rgba(249,115,22,.4)}
-.err{margin-top:16px;background:#fef2f2;border:1px solid #fecaca;color:var(--err);padding:12px 16px;border-radius:12px;font-size:13.5px;line-height:1.7;display:none;white-space:pre-wrap}
+.picker button{border:none;border-radius:980px;padding:8px 20px;font-size:13px;font-weight:500;color:#fff;cursor:pointer;background:var(--accent);font-family:inherit}
+.picker button:hover{background:#e08c07}
+.picker button.alt{background:rgba(0,0,0,.05);color:var(--ink);font-weight:500}
+.picker button.alt:hover{background:rgba(0,0,0,.09)}
+.file-btn{background:rgba(0,0,0,.045);border:none;border-radius:980px;padding:6px 14px;font-size:12.5px;color:var(--ink);cursor:pointer;font-family:inherit;transition:.2s;font-weight:500}
+.file-btn:hover{background:rgba(0,0,0,.085)}
+.hot-btn{background:rgba(245,158,11,.12)!important;color:#9a3412!important}
+.hot-btn:hover{background:rgba(245,158,11,.2)!important}
+.err{margin-top:16px;background:#fef2f2;border-radius:14px;color:var(--err);padding:14px 18px;font-size:13.5px;line-height:1.6;display:none;white-space:pre-wrap}
 
 /* progress */
 .prog{display:none;padding:6px 2px}
 .prog .row{display:flex;justify-content:space-between;align-items:baseline}
-.prog .stage{font-size:14px;font-weight:600}
+.prog .stage{font-size:14px;font-weight:600;letter-spacing:-.01em}
 .prog .pct{font-size:13px;color:var(--sub);font-variant-numeric:tabular-nums}
-.bar{height:6px;background:var(--line);border-radius:99px;margin-top:14px;overflow:hidden}
-.bar i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .35s ease}
+.bar{height:6px;background:rgba(0,0,0,.06);border-radius:99px;margin-top:14px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;border-radius:99px;background:var(--accent);transition:width .35s ease}
 .prog .msg{margin-top:10px;font-size:12.5px;color:var(--sub);min-height:18px}
 .stop{margin-top:10px;background:none;border:none;color:var(--sub);font-size:12.5px;cursor:pointer;padding:0;font-family:inherit}
 .stop:hover{color:var(--err)}
 
 /* result */
-.result{display:none;margin-top:22px;padding:26px}
-.rhead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.rhead h2{font-size:16.5px;font-weight:700;line-height:1.5}
+.result{display:none;margin-top:22px;padding:30px 28px}
+.rhead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:18px;border-bottom:1px solid rgba(0,0,0,.06);flex-wrap:wrap}
+.rhead h2{font-size:19px;font-weight:600;line-height:1.4;letter-spacing:-.02em}
 .acts{flex-shrink:0;display:flex;gap:8px}
-.acts button{background:var(--hover);border:1px solid var(--line);border-radius:8px;padding:6px 13px;font-size:12.5px;color:var(--sub);cursor:pointer;font-family:inherit}
-.acts button:hover{color:var(--ink);border-color:#c4c4c8}
+.acts button{background:rgba(0,0,0,.045);border:none;border-radius:980px;padding:7px 15px;font-size:12.5px;color:var(--ink);cursor:pointer;font-family:inherit;transition:.2s;font-weight:500}
+.acts button:hover{background:rgba(0,0,0,.085)}
+.acts button.hot{background:rgba(245,158,11,.12);color:#9a3412}
+.acts button.hot:hover{background:rgba(245,158,11,.2)}
 
 /* markdown */
-.md{margin-top:16px;font-size:14.5px}
-.md h1{font-size:20px;font-weight:700;margin:22px 0 6px;line-height:1.45}
-.md h2{font-size:15px;font-weight:700;margin:26px 0 8px;display:flex;align-items:center;gap:9px}
-.md h2::before{content:"";width:4px;height:15px;border-radius:3px;background:linear-gradient(180deg,var(--accent),var(--accent2));flex-shrink:0}
-.md h3{font-size:14px;font-weight:600;margin:16px 0 6px}
+.md{margin-top:18px;font-size:15px;line-height:1.65;letter-spacing:-.011em}
+.md h1{font-size:24px;font-weight:700;margin:26px 0 8px;line-height:1.3;letter-spacing:-.025em}
+.md h2{font-size:17px;font-weight:600;margin:30px 0 10px;display:flex;align-items:center;gap:10px;letter-spacing:-.02em}
+.md h2::before{content:"";width:3px;height:16px;border-radius:3px;background:var(--accent);flex-shrink:0}
+.md h3{font-size:15px;font-weight:600;margin:18px 0 6px}
 .md p{margin:9px 0;color:#27272a}
 .md ul,.md ol{padding-left:0;margin:10px 0;list-style:none}
 .md li{position:relative;padding-left:18px;margin:7px 0;color:#27272a}
@@ -110,42 +118,46 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .md summary:hover{color:var(--ink)}
 
 /* aside */
-aside{position:sticky;top:20px;align-self:start}.side-card{padding:20px}
-.cap{font-size:12px;font-weight:600;letter-spacing:.18em;color:var(--sub);margin-bottom:12px}
-.h-item{padding:9px 11px;margin:0 -11px;border-radius:10px;cursor:pointer;transition:background .15s}
-.h-item:hover{background:var(--hover)}
-.h-item .t{font-size:13px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.h-item .d{font-size:11px;color:#a1a1aa;margin-top:2px}
-.empty{font-size:12.5px;color:#a1a1aa}
+aside{position:sticky;top:20px;align-self:start}.side-card{padding:22px}
+.cap{font-size:11px;font-weight:600;letter-spacing:.12em;color:var(--ter);margin-bottom:12px;text-transform:uppercase}
+.h-item{padding:10px 12px;margin:0 -12px;border-radius:12px;cursor:pointer;transition:background .2s}
+.h-item:hover{background:rgba(0,0,0,.04)}
+.h-item .t{font-size:13px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;letter-spacing:-.01em}
+.h-item .d{font-size:11px;color:var(--ter);margin-top:2px}
+.empty{font-size:12.5px;color:var(--ter)}
 
 /* dialog */
-dialog{position:fixed;inset:0;margin:auto;background:var(--card);color:var(--ink);border:none;
-  border-radius:20px;padding:32px;width:min(480px,92vw);
-  box-shadow:0 24px 70px rgba(0,0,0,.22);
-  animation:dlgIn .22s ease}
-dialog::backdrop{background:rgba(24,24,27,.4);backdrop-filter:blur(3px)}
-@keyframes dlgIn{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
-dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
+dialog{position:fixed;inset:0;margin:auto;background:rgba(255,255,255,.98);color:var(--ink);border:none;
+  border-radius:22px;padding:34px;width:min(480px,92vw);
+  box-shadow:0 30px 80px rgba(0,0,0,.22);
+  backdrop-filter:saturate(180%) blur(20px);
+  animation:dlgIn .3s cubic-bezier(.25,.1,.25,1)}
+dialog::backdrop{background:rgba(0,0,0,.32);backdrop-filter:blur(6px)}
+@keyframes dlgIn{from{opacity:0;transform:translateY(20px) scale(.96)}to{opacity:1;transform:none}}
+dialog h3{font-size:20px;font-weight:600;margin-bottom:24px;letter-spacing:-.022em}
 .frow{margin-bottom:18px}
 .frow label{display:block;font-size:12.5px;color:var(--sub);margin-bottom:6px}
-.frow input,.frow select{width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:14px;color:var(--ink);outline:none;font-family:inherit;transition:border-color .15s}
+.frow input,.frow select{width:100%;background:rgba(0,0,0,.04);border:1.5px solid transparent;border-radius:12px;padding:11px 14px;font-size:15px;color:var(--ink);outline:none;font-family:inherit;transition:border-color .2s,background .2s,box-shadow .2s}
 .frow select{cursor:pointer}
-.frow input:focus,.frow select:focus{border-color:var(--accent);background:#fffdf8}
-.dlg-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
-.dlg-foot button{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:9px 20px;font-size:13.5px;color:var(--sub);cursor:pointer;font-family:inherit}
-.dlg-foot button.pri{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;font-weight:600}
-.dlg-foot button:hover{filter:brightness(.97)}
+.frow input:focus,.frow select:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 4px rgba(245,158,11,.12)}
+.dlg-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:26px}
+.dlg-foot button{border:none;background:rgba(0,0,0,.05);border-radius:980px;padding:10px 22px;font-size:14px;color:var(--ink);cursor:pointer;font-family:inherit;font-weight:500;transition:.2s}
+.dlg-foot button.pri{background:var(--accent);color:#fff}
+.dlg-foot button.pri:hover{background:#e08c07}
+.dlg-foot button:hover{background:rgba(0,0,0,.09)}
+.dlg-foot button.pri:hover{background:#e08c07}
 
-.qa{display:none;margin-top:22px;padding:22px 26px}
+.qa{display:none;margin-top:22px;padding:26px 28px}
 .qa .msgs{max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:12px;margin:14px 0}
-.bub{max-width:88%;padding:9px 13px;border-radius:12px;font-size:13.5px;line-height:1.65;white-space:pre-wrap}
-.bub.u{align-self:flex-end;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-bottom-right-radius:4px}
-.bub.a{align-self:flex-start;background:var(--hover);border:1px solid var(--line);border-bottom-left-radius:4px}
+.bub{max-width:88%;padding:10px 15px;border-radius:18px;font-size:13.5px;line-height:1.6;white-space:pre-wrap}
+.bub.u{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:5px}
+.bub.a{align-self:flex-start;background:rgba(0,0,0,.045);border-bottom-left-radius:5px}
 .qrow{display:flex;gap:10px;margin-top:4px}
-.qrow input{flex:1;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;font-size:13.5px;color:var(--ink);outline:none;font-family:inherit}
-.qrow input:focus{border-color:var(--accent)}
-.qrow button{border:none;border-radius:10px;padding:0 20px;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:inherit}
-.note{margin-top:26px;font-size:12.5px;color:#a1a1aa;line-height:2}
+.qrow input{flex:1;background:rgba(0,0,0,.04);border:1.5px solid transparent;border-radius:12px;padding:11px 15px;font-size:13.5px;color:var(--ink);outline:none;font-family:inherit;transition:.2s}
+.qrow input:focus{border-color:var(--accent);background:#fff;box-shadow:0 0 0 4px rgba(245,158,11,.12)}
+.qrow button{border:none;border-radius:980px;padding:0 22px;font-size:13.5px;font-weight:500;color:#fff;cursor:pointer;background:var(--accent);font-family:inherit}
+.qrow button:hover{background:#e08c07}
+.note{margin-top:26px;font-size:12.5px;color:var(--ter);line-height:1.9}
 
 /* ---------- 速学模式 ---------- */
 .mindmap-box{background:var(--hover);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:10px 0}
@@ -155,7 +167,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 .mm-tree li::before{content:"";position:absolute;left:8px;top:0;bottom:0;width:1px;background:var(--line)}
 .mm-tree li:last-child::before{bottom:auto;height:14px}
 .mm-tree li>span.mm-tg{position:absolute;left:0;top:5px;width:15px;height:15px;line-height:13px;text-align:center;
-  border:1px solid var(--line2);border-radius:4px;background:#fff;color:var(--sub);cursor:pointer;font-size:11px;user-select:none}
+  border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--sub);cursor:pointer;font-size:11px;user-select:none}
 .mm-tree li>span.mm-tg:hover{color:var(--ink);border-color:var(--accent)}
 .quiz-q{cursor:pointer;border-radius:8px;padding:4px 8px;margin-left:-8px}
 .quiz-q:hover{background:var(--hover)}
@@ -192,25 +204,25 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
   #dmStrip{height:20px}
 }
 /* 公共模式提示条 */
-.pub-banner{display:none;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;
-  border-radius:12px;padding:10px 16px;font-size:13px;line-height:1.7;margin-bottom:16px}
+.pub-banner{display:none;background:rgba(245,158,11,.09);color:#9a3412;
+  border-radius:16px;padding:14px 20px;font-size:13.5px;line-height:1.6;margin-bottom:20px;letter-spacing:-.01em}
 
 /* ---------- 期末冲刺 CTA ---------- */
-.study-cta{display:none;margin-top:16px;border-radius:14px;padding:16px 18px;cursor:pointer;
-  background:linear-gradient(135deg,#fff7ed,#fffbeb);border:1.5px solid #fdba74;
-  transition:transform .1s, box-shadow .15s;position:relative}
-.study-cta:hover{transform:translateY(-1px);box-shadow:0 6px 18px -6px rgba(249,115,22,.35)}
-.study-cta .t{font-size:14.5px;font-weight:700;color:#9a3412;display:flex;align-items:center;gap:8px}
-.study-cta .t .pill{background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-size:10.5px;
-  padding:1px 8px;border-radius:99px;letter-spacing:.08em}
-.study-cta .d{font-size:12.5px;color:#b45309;margin-top:5px;line-height:1.65}
-.study-cta .go{position:absolute;right:16px;top:50%;transform:translateY(-50%);
-  background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;border:none;border-radius:10px;
-  padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
-.study-cta .x{position:absolute;right:6px;top:6px;border:none;background:none;color:#d97706;
-  font-size:13px;cursor:pointer;opacity:.6;font-family:inherit}
+.study-cta{display:none;margin-top:18px;border-radius:20px;padding:22px 24px;cursor:pointer;
+  background:linear-gradient(135deg,#fff9f0,#fffdfa);
+  transition:transform .3s cubic-bezier(.25,.1,.25,1), box-shadow .3s;position:relative}
+.study-cta:hover{transform:translateY(-3px);box-shadow:0 14px 36px rgba(245,158,11,.16)}
+.study-cta .t{font-size:17px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:9px;letter-spacing:-.02em}
+.study-cta .t .pill{background:var(--accent);color:#fff;font-size:10.5px;
+  padding:3px 10px;border-radius:980px;letter-spacing:.02em;font-weight:600}
+.study-cta .d{font-size:13.5px;color:var(--sub);margin-top:7px;line-height:1.55;max-width:78%}
+.study-cta .go{position:absolute;right:24px;top:50%;transform:translateY(-50%);
+  background:var(--accent);color:#fff;border:none;border-radius:980px;
+  padding:10px 22px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;transition:.2s}
+.study-cta .go:hover{background:#e08c07}
+.study-cta .x{position:absolute;right:8px;top:8px;border:none;background:none;color:var(--ter);
+  font-size:15px;cursor:pointer;opacity:.5;font-family:inherit}
 .study-cta .x:hover{opacity:1}
-.acts button.hot{background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;border:none;font-weight:600}
 .acts button.hot .new{font-size:9.5px;vertical-align:super;margin-left:2px}
 
 </style>
@@ -377,7 +389,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
   <div class="frow"><label>激活码（作者直接发给你，无需赞助即可用）</label>
     <input id="actCode" placeholder="XXXXX-XXXXX-XXXXX-XXXXX" style="font-family:Consolas,monospace;letter-spacing:.05em"
            onkeydown="if(event.key==='Enter')doActivate('code')"></div>
-  <div style="font-size:11.5px;color:#a1a1aa;line-height:1.6;margin-bottom:6px">
+  <div style="font-size:11.5px;color:var(--ter);line-height:1.6;margin-bottom:6px">
     💡 激活码不绑定设备：手机、电脑等任意多台设备都能用同一张码。请把它保存在备忘录里，新设备打开本站输入即可。
   </div>
   <div id="actOnlineRow" style="display:none">
@@ -403,7 +415,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
       <option value="weibo">微博短文案</option>
       <option value="zhihu">知乎回答</option>
     </select></div>
-  <button class="pri" style="width:100%;border:none;border-radius:10px;padding:10px;font-size:14px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:inherit" onclick="doRewrite()">开始改写</button>
+  <button class="pri" style="width:100%;border:none;border-radius:10px;padding:10px;font-size:14px;font-weight:600;color:#fff;cursor:pointer;background:var(--accent);font-family:inherit" onclick="doRewrite()">开始改写</button>
   <div id="rwMsg" style="font-size:12.5px;color:var(--sub);margin-top:8px;min-height:18px"></div>
   <div class="frow" style="margin-top:10px"><label>改写结果（可直接复制发布）</label>
     <textarea id="rwOut" rows="10" style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:10px 13px;font-size:13.5px;color:var(--ink);outline:none;font-family:inherit;resize:vertical" placeholder="点击「开始改写」后这里会生成文案"></textarea></div>
@@ -419,7 +431,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
   <div class="frow"><label>UP主主页链接或 uid（每行一个，保存在本机）</label>
     <textarea id="feedUps" rows="3" style="width:100%;background:var(--hover);border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:13.5px;color:var(--ink);outline:none;font-family:inherit;resize:vertical" placeholder="https://space.bilibili.com/12345&#10;67890"></textarea></div>
   <div style="display:flex;gap:10px;align-items:center">
-    <button class="pri" style="border:none;border-radius:10px;padding:8px 18px;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));font-family:inherit" onclick="checkFeed()">检查近14天更新</button>
+    <button class="pri" style="border:none;border-radius:10px;padding:8px 18px;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;background:var(--accent);font-family:inherit" onclick="checkFeed()">检查近14天更新</button>
     <span id="feedMsg" style="font-size:12.5px;color:var(--sub)"></span>
   </div>
   <div id="feedList" style="margin-top:14px;max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:6px"></div>
@@ -432,7 +444,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
 
 <dialog id="settingsDlg">
   <h3>设置</h3>
-  <div id="setHint" style="font-size:12.5px;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:8px 12px;margin-bottom:14px;display:none"></div>
+  <div id="setHint" style="font-size:12.5px;color:#9a3412;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:8px 12px;margin-bottom:14px;display:none"></div>
 
   <!-- 生成偏好（两种模式都显示） -->
   <div class="frow">
@@ -441,7 +453,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
              onchange="syncPrefNotes()">
       <span>画面理解：AI 同时「看」视频画面</span>
     </label>
-    <div style="font-size:11.5px;color:#a1a1aa;margin-top:5px;line-height:1.6">
+    <div style="font-size:11.5px;color:var(--ter);margin-top:5px;line-height:1.6">
       适合速成课、教程等有板书/题目的视频：逐字转写屏幕上的题目、选项、公式与板书。
       仅在 AI 直听（无字幕视频/本地文件）时生效，更耗额度。
     </div>
@@ -494,7 +506,7 @@ dialog h3{font-size:16px;font-weight:700;margin-bottom:22px}
     <div style="border-top:1px solid var(--line);margin:22px 0 18px"></div>
     <div class="frow"><label>本地数据</label>
       <button class="btn ghost" onclick="clearLocalData()">清除本地偏好缓存</button>
-      <div style="font-size:11.5px;color:#a1a1aa;margin-top:5px">清除上面的偏好设置，不影响账号与云端笔记</div>
+      <div style="font-size:11.5px;color:var(--ter);margin-top:5px">清除上面的偏好设置，不影响账号与云端笔记</div>
     </div>
   </div>
 
@@ -1049,7 +1061,7 @@ function enhanceStudyPack(){
     quiz.after(tip);
   }
 
-  const marks={"必会知识点":"#dc2626","高频考点":"#c2620a","易错点":"#b45309",
+  const marks={"必会知识点":"#dc2626","高频考点":"#c2620a","易错点":"#9a3412",
                "记忆锚点":"#7c3aed","术语表":"#0891b2","思维导图":"#0f766e"};
   h2s.forEach(h=>{
     for(const k in marks){
@@ -1553,7 +1565,7 @@ const siteModeReady=new Promise(r=>siteModeReadyResolve=r);
       $("pubBanner").style.display="block";
       $("pubBanner").innerHTML=`🌐 官方在线版 · AI 由站点提供，无需自备 Key。
         <b>注册即送每日 3 次免费体验</b>；赞助 ¥${d.plan_price||29.9}/月（
-        <a href="${d.afdian_url}" target="_blank" style="color:#b45309">afdian.com/a/Orisyan</a>）
+        <a href="${d.afdian_url}" target="_blank" style="color:#9a3412">afdian.com/a/Orisyan</a>）
         或使用激活码即不限次数。`;
       $("historyCard").style.display="none";
       $("actOnlineRow").style.display="block";
@@ -1562,7 +1574,7 @@ const siteModeReady=new Promise(r=>siteModeReadyResolve=r);
         $("pubBanner").innerHTML=`✅ ${AUTH.user} · 会员有效期至 ${AUTH.expiry} · 官方 API 已就绪 · <a href="javascript:void(0)" onclick="doLogout()" style="color:#15803d">退出登录</a>`;
         $("pubBanner").style.background="#f0fdf4";$("pubBanner").style.borderColor="#bbf7d0";$("pubBanner").style.color="#15803d";
       }else if(AUTH.user){
-        $("pubBanner").innerHTML=`👤 ${AUTH.user} · 今日剩余 ${AUTH.uses_left} 次免费体验（明天自动恢复） · <a href="javascript:void(0)" onclick="location.href='/me'" style="color:#b45309">我的主页</a> · <a href="javascript:void(0)" onclick="openActivate()" style="color:#b45309">升级会员</a> · <a href="javascript:void(0)" onclick="doLogout()" style="color:#b45309">退出</a>`;
+        $("pubBanner").innerHTML=`👤 ${AUTH.user} · 今日剩余 ${AUTH.uses_left} 次免费体验（明天自动恢复） · <a href="javascript:void(0)" onclick="location.href='/me'" style="color:#9a3412">我的主页</a> · <a href="javascript:void(0)" onclick="openActivate()" style="color:#9a3412">升级会员</a> · <a href="javascript:void(0)" onclick="doLogout()" style="color:#9a3412">退出</a>`;
         $("pubBanner").style.background="#fff7ed";$("pubBanner").style.borderColor="#fdba74";$("pubBanner").style.color="#9a3412";
       }
     }
