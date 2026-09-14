@@ -6,12 +6,16 @@
 <meta name="theme-color" content="#f59e0b">
 <title>我的主页 · 拾光 SeeGlow</title>
 <style>
-:root{--brand:#f59e0b;--brand2:#f97316;--ink:#18181b;--sub:#71717a;--line:#e4e4e7;--bg:#fffdf8;
-  --grad:linear-gradient(135deg,#f59e0b,#f97316);--err:#dc2626;--ok:#15803d}
+:root{
+  --ink:#1d1d1f;--sub:#6e6e73;--ter:#86868b;--line:#d2d2d7;--bg:#fbfbfd;
+  --accent:#f59e0b;--err:#dc2626;--ok:#15803d;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:"PingFang SC","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;
-  color:var(--ink);background:#fff;font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
-a{color:inherit;text-decoration:none}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro SC","SF Pro Text","PingFang SC",
+    "Helvetica Neue","Microsoft YaHei UI",system-ui,sans-serif;
+  letter-spacing:-.022em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+}
 .wrap{max-width:760px;margin:0 auto;padding:0 20px 70px}
 nav{border-bottom:1px solid var(--line);background:rgba(255,255,255,.92);backdrop-filter:blur(10px);
   position:sticky;top:0;z-index:20}
@@ -19,16 +23,16 @@ nav .wrap{max-width:900px;display:flex;align-items:center;justify-content:space-
 .brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:16.5px}
 .btn{display:inline-block;border-radius:11px;padding:9px 20px;font-size:13.5px;font-weight:600;
   cursor:pointer;border:none;font-family:inherit;transition:.15s;text-align:center}
-.btn.pri{background:var(--grad);color:#fff}
+.btn.pri{background:var(--accent);color:#fff}
 .btn.pri:hover{filter:brightness(1.06);transform:translateY(-1px)}
 .btn.ghost{background:#fff;border:1.5px solid var(--line);color:var(--ink)}
-.btn.ghost:hover{border-color:#c4c4c8}
+.btn.ghost:hover{border-color:var(--ter)}
 .btn.danger{background:#fef2f2;border:1.5px solid #fecaca;color:var(--err)}
 .btn.danger:hover{background:#fee2e2}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 
 /* profile hero */
-.hero{background:var(--grad);color:#fff;border-radius:0 0 26px 26px;padding:34px 20px 30px;text-align:center}
+.hero{background:var(--accent);color:#fff;border-radius:0 0 26px 26px;padding:34px 20px 30px;text-align:center}
 .avatar{width:76px;height:76px;border-radius:99px;margin:0 auto 12px;display:grid;place-items:center;
   background:rgba(255,255,255,.22);font-size:32px;font-weight:800;border:3px solid rgba(255,255,255,.55)}
 .hero h1{font-size:22px}
@@ -40,13 +44,13 @@ nav .wrap{max-width:900px;display:flex;align-items:center;justify-content:space-
 .card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:24px;margin-top:20px;
   box-shadow:0 1px 3px rgba(0,0,0,.05)}
 .card h2{font-size:16px;margin-bottom:14px;display:flex;align-items:center;gap:8px}
-.card h2::before{content:"";width:4px;height:15px;border-radius:3px;background:var(--grad)}
+.card h2::before{content:"";width:4px;height:15px;border-radius:3px;background:var(--accent)}
 
 /* quota */
 .quota-row{display:flex;gap:8px;justify-content:center;margin:12px 0 4px}
 .qdot{width:34px;height:34px;border-radius:10px;border:1.5px solid var(--line);display:grid;place-items:center;
-  font-weight:700;color:#c4c4c8;font-size:13px}
-.qdot.used{background:var(--grad);border-color:transparent;color:#fff}
+  font-weight:700;color:var(--ter);font-size:13px}
+.qdot.used{background:var(--accent);border-color:transparent;color:#fff}
 .qnote{text-align:center;font-size:12.5px;color:var(--sub)}
 
 /* membership */
@@ -62,11 +66,11 @@ nav .wrap{max-width:900px;display:flex;align-items:center;justify-content:space-
 .frow label{display:block;font-size:12.5px;color:var(--sub);margin-bottom:5px}
 .frow input{width:100%;background:var(--bg);border:1.5px solid var(--line);border-radius:10px;
   padding:9px 13px;font-size:14px;outline:none;font-family:inherit}
-.frow input:focus{border-color:var(--brand);background:#fffdf8}
+.frow input:focus{border-color:var(--accent);background:#fffdf8}
 .tabs{display:flex;gap:8px;margin-bottom:16px}
 .tab{flex:1;border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:8px;
   font-size:13px;cursor:pointer;font-family:inherit;color:var(--sub)}
-.tab.on{border-color:var(--brand);color:#b45309;font-weight:600;background:#fffbeb}
+.tab.on{border-color:var(--accent);color:#9a3412;font-weight:600;background:#fffbeb}
 #meMsg{font-size:13px;min-height:18px;margin:4px 0}
 .ok{color:var(--ok)}.bad{color:var(--err)}
 
@@ -76,9 +80,9 @@ nav .wrap{max-width:900px;display:flex;align-items:center;justify-content:space-
 .note-item:hover{border-color:#fdba74;background:#fffdf8}
 .note-item .t{flex:1;min-width:0}
 .note-item .t .n{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.note-item .t .d{font-size:11.5px;color:#a1a1aa}
+.note-item .t .d{font-size:11.5px;color:var(--ter)}
 .note-item .btn{padding:6px 14px;font-size:12px;border-radius:9px}
-.empty{text-align:center;color:#a1a1aa;font-size:13px;padding:18px 0}
+.empty{text-align:center;color:var(--ter);font-size:13px;padding:18px 0}
 @media(max-width:560px){.mem-cta{flex-direction:column}}
 </style>
 </head>
